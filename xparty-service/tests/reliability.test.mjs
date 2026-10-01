@@ -35,3 +35,8 @@ test('watch-only participants can request push to talk without bypassing the fou
  guests[0].c.send('call-leave');await a.next('state',m=>!m.room.people.find(p=>p.id===guests[0].w.id)?.inCall);a.send('ptt-review',{target:last.w.id,approve:true});await last.c.next('ptt-status',m=>m.approved);assert.equal(r.people.get(last.w.id).inCall,true);assert.equal([...r.people.values()].filter(p=>p.inCall).length,4);
  }finally{await app.close();}
 });
+test('delivery acknowledgements require an actual recipient and preserve seen state on resume',async()=>{
+ const app=createXparty();await new Promise(r=>app.server.listen(0,'127.0.0.1',r));try{
+ const port=app.server.address().port,a=await client(port),b=await client(port),c=await client(port);a.send('create',{capacity:3});const aw=await a.next('welcome');b.send('join',{code:aw.room.code});const bw=await b.next('welcome');c.send('join',{code:aw.room.code});await c.next('welcome');a.send('chat',{text:'Private delivery',to:bw.id});const message=await b.next('chat');c.send('delivered',{ids:[message.id]});c.send('read',{ids:[message.id]});c.send('ping',{sent:19});await c.next('pong',m=>m.sent===19);const item=app.rooms.get(aw.room.code).history.find(x=>x.id===message.id);assert.equal(item.deliveredBy,undefined);assert.equal(item.readBy,undefined);b.send('delivered',{ids:[message.id]});assert.equal((await a.next('delivered')).id,message.id);b.send('read',{ids:[message.id]});assert.equal((await a.next('read')).id,message.id);assert.deepEqual(item.deliveredBy,[bw.id]);assert.deepEqual(item.readBy,[bw.id]);
+ }finally{await app.close();}
+});
