@@ -22,7 +22,19 @@ function status(text) {$('sync-status').lastChild.textContent=' '+t(text);}
 function notice(text) {$('connection-notice').textContent=text||'Connected. Share the room code privately.';}
 function send(type, fields={}) {if(['playback','source','next','previous','party-mode'].includes(type))fields.eventId??=crypto.randomUUID();if(type==='playback'&&!fields.intent)fields.intent=Math.abs((fields.position||0)-currentTime())>1?'seek':fields.playing?'play':'pause';if(preview) {toast('This is a design preview. Create a room to connect.');return false;}if(socket?.readyState!==WebSocket.OPEN){toast('Room connection is offline. Reconnecting…');return false;}socket.send(JSON.stringify({type,...fields}));return true;}
 function ping() {if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ping',sent:Date.now()}));}
-function connect(action) {
+let serviceWarmup, preparingConnection=false;
+const serviceStatus=document.createElement('p');serviceStatus.className='small';serviceStatus.setAttribute('role','status');serviceStatus.hidden=true;$('create').parentElement.append(serviceStatus);
+function warmService(){
+ if(serviceWarmup)return serviceWarmup;
+ serviceWarmup=(async()=>{const deadline=Date.now()+100000;while(Date.now()<deadline){try{const response=await fetch(base+'/health',{cache:'no-store',signal:AbortSignal.timeout(12000)});const data=await response.json();if(response.ok&&data.ok&&data.service==='Xparty')return;}catch{}await new Promise(resolve=>setTimeout(resolve,2000));}throw new Error('The party server is taking longer than expected. Please try again.');})().finally(()=>{serviceWarmup=null;});return serviceWarmup;
+}
+// One bounded warm-up per visit; no idle keep-alive traffic.
+if(base!==location.origin)warmService().catch(()=>{});
+async function connect(action) {
+ if(preparingConnection)return;
+ if(!room){preparingConnection=true;$('create').disabled=true;$('join-button').disabled=true;serviceStatus.hidden=false;serviceStatus.textContent=t('Connecting to the party server… First connection may take about a minute.');
+ try{await warmService();}catch(error){toast(error.message);return;}finally{preparingConnection=false;serviceStatus.hidden=true;$('create').disabled=false;$('join-button').disabled=false;}}
+
   preview=false;intentionalClose=false;clearTimeout(reconnectTimer);clearTimeout(connectTimer);
   $('create').disabled=true;$('join-form').querySelector('button').disabled=true;
   let url;try{url=new URL(base);url.protocol=url.protocol==='https:'?'wss:':'ws:';url.pathname='/ws';url.search='';}catch{toast('The room service address is invalid.');return;}
