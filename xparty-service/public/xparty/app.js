@@ -85,7 +85,7 @@ function handle(m) {
     const newCommand=m.playback.revision!==activePlayback?.revision;room.playback=m.playback;activePlayback=m.playback;if(newCommand&&!localPaused&&room.source?.type==='youtube'){clearTimeout(bufferTimer);bufferReported=false;if(m.playback.playing){if(!ytReady)reportBuffer(true);else if(yt.getPlayerState()===3)bufferTimer=setTimeout(()=>reportBuffer(true),1200);}}applyPlayback(newCommand||m.resync===true);return;
   }
   if(m.type==='reaction'){toast(m.name+' '+m.emoji);return;}
-  if(m.type==='friend-state'){friendRequests=m.requests||[];renderRoomFriends();if(room){renderPeople();renderRequestNotices();}if(friendRequests.some(q=>q.to===me&&q.status==='pending'))toast('A friend request is waiting in Notifications.');return;}if(m.type==='poll-update'){for(const e of document.querySelectorAll('[data-poll-id]'))if(e.dataset.pollId===m.poll.id)renderPoll(e,m.poll);return;}if(m.type==='chat'){addMessage(m);return;}
+  if(m.type==='friend-state'){friendRequests=m.requests||[];renderRoomFriends();if(room){renderPeople();renderRequestNotices();}if(friendRequests.some(q=>q.to===me&&q.status==='pending'))toast('A friend request is waiting in Friends.');return;}if(m.type==='poll-update'){for(const e of document.querySelectorAll('[data-poll-id]'))if(e.dataset.pollId===m.poll.id)renderPoll(e,m.poll);return;}if(m.type==='chat'){addMessage(m);return;}
   if(m.type==='read'||m.type==='delivered'){const node=document.querySelector('[data-message-id="'+CSS.escape(m.id)+'"] .read-receipt');if(node){if(m.type==='read'){node.dataset.state='read';node.textContent='◉';node.setAttribute('aria-label',t('Seen'));notifySound('read');}else if(node.dataset.state!=='read'){node.dataset.state='delivered';node.textContent='✓✓';node.setAttribute('aria-label',t('Delivered'));}}return;}
   if(m.type==='signal'){const peer=ensurePeer(m.from);if(peer) peer.queue=peer.queue.then(()=>receiveSignal(peer,m.signal)).catch(error=>{console.warn(error);schedulePeerRecovery(peer);});}
 }
@@ -250,7 +250,7 @@ async function applySource(source) {showControls();
   $('video-title').textContent=source.title;
   if(source.type==='youtube') {
     ownedFile=null;ownedFileId=null;pendingFile=null;status('Loading YouTube');
-    try{await loadYouTube();if(sourceId!==source.id)return;yt.cueVideoById(source.videoId);applyPlaybackSound();send('ready',{sourceId,ready:true});setTimeout(()=>applyPlayback(true),800);}catch{toast('YouTube could not load. Check your connection or content blocker.');status('YouTube unavailable');}
+    try{await loadYouTube();if(sourceId!==source.id)return;yt.cueVideoById(source.videoId);applyCaptions();applyPlaybackSound();send('ready',{sourceId,ready:true});setTimeout(()=>applyPlayback(true),800);}catch{toast('YouTube could not load. Check your connection or content blocker.');status('YouTube unavailable');}
   }else {
     status('Preparing shared file');
     if(me===source.owner && pendingFile){const file=pendingFile;pendingFile=null;loadedFileId=source.id;setFileBlob(file);uploadFile(file,source.id);}else if(source.uploaded)ensureFile();else transfer('Waiting for the host to finish uploading…',0);
@@ -260,7 +260,7 @@ function loadYouTube() {
   if(ytReady)return Promise.resolve();if(ytPromise)return ytPromise;
   ytPromise=new Promise((resolve,reject)=>{
     const timeout=setTimeout(()=>reject(new Error('YouTube timed out')),20000);
-    function init(){yt=new YT.Player('youtube-player',{width:'100%',height:'100%',playerVars:{playsinline:1,controls:0,disablekb:1,fs:0,rel:0,origin:location.origin},events:{onReady:()=>{clearTimeout(timeout);ytReady=true;yt.getIframe?.().setAttribute('tabindex','-1');resolve();},onStateChange:youtubeEvent,onError:e=>{reportBuffer(false);status('Video unavailable');toast('YouTube cannot embed this video ('+e.data+'). Try another video.');},onAutoplayBlocked:()=>{reportBuffer(true);$('unlock-playback').hidden=false;toast('Tap the playback button on this device to enable sound and video.');}}});}
+    function init(){yt=new YT.Player('youtube-player',{width:'100%',height:'100%',playerVars:{playsinline:1,controls:0,disablekb:1,fs:0,rel:0,origin:location.origin},events:{onReady:()=>{clearTimeout(timeout);ytReady=true;yt.getIframe?.().setAttribute('tabindex','-1');resolve();},onApiChange:applyCaptions,onStateChange:youtubeEvent,onError:e=>{reportBuffer(false);status('Video unavailable');toast('YouTube cannot embed this video ('+e.data+'). Try another video.');},onAutoplayBlocked:()=>{reportBuffer(true);$('unlock-playback').hidden=false;toast('Tap the playback button on this device to enable sound and video.');}}});}
     if(window.YT?.Player)init();else{window.onYouTubeIframeAPIReady=init;const script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';script.onerror=()=>{clearTimeout(timeout);reject(new Error('YouTube blocked'));};document.head.append(script);}
   });ytPromise.catch(()=>{ytPromise=null;});return ytPromise;
 }
@@ -326,7 +326,7 @@ function setRecipient(person){if(recipient)send('typing',{active:false,to:recipi
 function showMentions(){const value=$('message-input').value;const match=value.match(/(?:^|\s)@([^@]*)$/);if(!match){$('mentions').hidden=true;return;}const list=(room?.people||[]).filter(p=>p.id!==me&&p.name.toLowerCase().includes(match[1].toLowerCase()));$('mentions').replaceChildren();for(const p of list){const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.textContent=p.name;button.onclick=()=>{send('typing',{active:false,to:recipient?.id});setRecipient(p);$('message-input').value=value.slice(0,match.index).trim();$('message-input').focus();};$('mentions').append(button);}$('mentions').hidden=!list.length;}
 function actionIcon(label,shape,action){const b=document.createElement('button');b.type='button';b.className='icon-control';icon(b,shape,t(label));b.onclick=action;return b;}
 function renderMembers(){const container=$('member-list');container.replaceChildren();for(const person of room.people){
-  const row=document.createElement('div');row.className='member-row';const label=document.createElement('span');label.textContent=person.name+(person.online?'':' · Away');row.append(label);
+  const row=document.createElement('div');row.className='member-row';const label=document.createElement('span');label.textContent=person.name+(person.online?'':' · Away');if(person.id===room.hostId){const crown=document.createElement('span');crown.className='host-crown';crown.setAttribute('role','img');icon(crown,'crown',t('Host'));label.prepend(crown);}row.append(label);
   if(person.id!==me){row.append(actionIcon('Add '+person.name+' as friend','person-add',()=>send('friend-request',{target:person.id})));row.append(actionIcon('Message '+person.name,'message',()=>{setRecipient(person);conversation('both');$('return-room').click();members.open=false;$('message-input').focus();}));
     if(me===room.hostId){const tools=document.createElement('div');tools.className='member-permissions';tools.hidden=true;
       row.append(actionIcon('Permissions for '+person.name,'settings',()=>{tools.hidden=!tools.hidden;keepMembers();}));
@@ -572,14 +572,14 @@ $('notification-return').onclick=()=>{$('notifications-dialog').close();if(room)
 const roomSettingsLink=document.createElement('button');roomSettingsLink.className='secondary';roomSettingsLink.textContent='Room settings';roomSettingsLink.onclick=()=>{$('room-menu').open=false;$('room-settings-button').click();};document.querySelector('.room-menu-content').append(roomSettingsLink);
 // Room social actions are independent of the playback clock.
 let friendRequests=[];
-function renderRoomFriends(){if(!room){$('room-friend-list').replaceChildren();$('friend-notifications').replaceChildren();$('nav-notifications').classList.remove('has-notice');return;}const box=$('room-friend-list');box.replaceChildren();const notices=$('friend-notifications');notices.replaceChildren();for(const person of room.people.filter(p=>p.id!==me&&p.online)){
+function renderRoomFriends(){if(!room){$('room-friend-list').replaceChildren();$('friend-notifications').replaceChildren();$('nav-notifications').classList.remove('has-notice');$('nav-friends').classList.remove('has-notice');return;}const box=$('room-friend-list');box.replaceChildren();const notices=$('friend-notifications');notices.replaceChildren();for(const person of room.people.filter(p=>p.id!==me&&p.online)){
  const row=document.createElement('div');row.className='friend-row';const name=document.createElement('span');name.textContent=person.name;row.append(name);const request=friendRequests.find(q=>[q.from,q.to].includes(person.id)&&q.status!=='declined');
- if(request?.status==='accepted'){row.append(actionIcon('Message '+person.name,'message',()=>{$('room-friends-dialog').close();setRecipient(person);$('return-room').click();conversation('chat');$('message-input').focus();}));}
+ if(request?.status==='accepted'){row.append(actionIcon('Message '+person.name,'message',()=>{$('room-friends-dialog').close();$('account-dialog').close();setRecipient(person);$('return-room').click();conversation('chat');$('message-input').focus();}));}
  else if(request?.status==='pending'&&request.to===me){for(const [label,accept,shape]of[['Accept friend',true,'check'],['Decline friend',false,'close']])row.append(actionIcon(label,shape,()=>send('friend-review',{id:request.id,accept})));const note=document.createElement('div');note.className='friend-row';const text=document.createElement('span');text.textContent=person.name+' wants to connect';note.append(text,actionIcon('Accept friend', 'check',()=>send('friend-review',{id:request.id,accept:true})),actionIcon('Decline friend','close',()=>send('friend-review',{id:request.id,accept:false})));notices.append(note);}
  else if(request?.status==='pending'){const pending=document.createElement('small');pending.textContent='Request sent';row.append(pending);}
  else row.append(actionIcon('Add '+person.name+' as friend','person-add',()=>send('friend-request',{target:person.id})));box.append(row);
- }if(!box.children.length)box.textContent='Invite someone with your room code to connect.';const pendingFriend=friendRequests.some(q=>q.to===me&&q.status==='pending');$('nav-notifications').classList.toggle('has-notice',pendingFriend);$('nav-settings').classList.toggle('has-notice',pendingFriend);}
-window.addEventListener('xparty:room-friends',()=>{renderRoomFriends();$('room-friends-dialog').showModal();});
+ }if(!box.children.length)box.textContent='Invite someone with your room code to connect.';const pendingFriend=friendRequests.some(q=>q.to===me&&q.status==='pending');$('nav-notifications').classList.toggle('has-notice',pendingFriend);$('nav-settings').classList.toggle('has-notice',pendingFriend);$('nav-friends').classList.toggle('has-notice',pendingFriend);}
+window.addEventListener('xparty:room-friends',()=>{renderRoomFriends();$('room-friends-dialog').append($('room-friend-list'));$('room-friends-dialog').showModal();});
 function renderPoll(card,poll){card.className='poll-card';card.replaceChildren();const question=document.createElement('strong');question.textContent=poll.question;card.append(question);const total=Object.keys(poll.votes).length;poll.options.forEach((option,i)=>{const count=Object.values(poll.votes).filter(v=>v===i).length;const b=document.createElement('button');b.type='button';b.textContent=option+' · '+count;b.setAttribute('aria-pressed',poll.votes[me]===i);b.style.setProperty('--vote-share',(total?count/total*100:0)+'%');b.onclick=()=>send('poll-vote',{id:poll.id,choice:i});card.append(b);});const detail=document.createElement('small');detail.textContent=total+' vote'+(total===1?'':'s')+' · Tap to change your choice';card.append(detail);}
 $('send-poll').onclick=()=>{const question=$('poll-question').value.trim(),options=$('poll-options').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!question||options.length<2||options.length>6||new Set(options).size!==options.length)return toast('Add a question and 2–6 different choices.');send('poll-create',{question,options});$('poll-dialog').close();$('poll-question').value='';$('poll-options').value='';};icon($('exit-theatre'),'close','Exit theatre');icon($('call-controls-toggle'),'more','Show call controls');
 const callPanel=document.querySelector('.call-panel');let callControlTimer;
@@ -639,7 +639,7 @@ setInterval(()=>{if(!document.hidden&&!suspended&&room&&socket?.readyState===Web
 function roomFriendAction(person,button){const request=friendRequests.find(q=>[q.from,q.to].includes(person.id)&&[q.from,q.to].includes(me)&&q.status!=='declined');button.disabled=false;
  if(request?.status==='accepted'){icon(button,'message',t('Message')+' '+person.name);button.onclick=()=>{setRecipient(person);conversation('chat');};}
  else if(request?.status==='pending'&&request.from===me){icon(button,'check',t('Friend request sent'));button.disabled=true;}
- else if(request?.status==='pending'){icon(button,'person-add',t('Review friend request'));button.onclick=()=>{renderRoomFriends();$('room-friends-dialog').showModal();};}
+ else if(request?.status==='pending'){icon(button,'person-add',t('Review friend request'));button.onclick=()=>{renderRoomFriends();$('room-friends-dialog').append($('room-friend-list'));$('room-friends-dialog').showModal();};}
  else{icon(button,'person-add',t('Add friend')+': '+person.name);button.onclick=()=>send('friend-request',{target:person.id});}
 }
 
@@ -702,3 +702,16 @@ function showRoomGuide(){if(preview||!room)return;try{if(localStorage.getItem('x
 
 members.append($('rename'));$('call-seats').setAttribute('aria-label',t('Call seats'));
 
+
+// The Friends tab includes guest requests; the top Messages button stays account-private.
+window.addEventListener('xparty:social-view',e=>{const box=$('room-friend-list');if(e.detail==='friends'&&room){renderRoomFriends();$('guest-friends').append(box);$('guest-friends').hidden=false;}else{$('room-friends-dialog').append(box);$('guest-friends').hidden=true;}});
+let captionsEnabled=false;
+const captionsButton=document.createElement('button');captionsButton.id='captions-toggle';captionsButton.className='quiet';captionsButton.type='button';
+function applyCaptions(){
+ captionsButton.textContent='CC '+(captionsEnabled?'On':'Off');captionsButton.setAttribute('aria-pressed',String(captionsEnabled));captionsButton.setAttribute('aria-label','Closed captions '+(captionsEnabled?'on':'off'));
+ if(room?.source?.type==='youtube'){if(captionsEnabled)yt?.loadModule?.('captions');else yt?.unloadModule?.('captions');}
+ else for(const track of $('file-player').textTracks)track.mode=captionsEnabled?'showing':'disabled';
+}
+captionsButton.onclick=()=>{if(!room?.source){toast('Choose a video first.');return;}if(room.source.type!=='youtube'&&!$('file-player').textTracks.length){toast('This video has no caption tracks.');return;}captionsEnabled=!captionsEnabled;applyCaptions();};
+$('resync').before(captionsButton);applyCaptions();
+$('file-player').addEventListener('loadedmetadata',applyCaptions);

@@ -53,6 +53,7 @@ function socialView(view='profile'){
  $('account-dialog').querySelector('h2').textContent={profile:'Your profile',friends:'Friends',messages:'Messages'}[view];
  for(const b of document.querySelectorAll('[data-social-view]'))b.setAttribute('aria-selected',b.dataset.socialView===view);
  $('social-view-note').textContent=view==='friends'?'Add a friend by profile ID, or choose someone from your friends.':view==='messages'?'Choose a friend to open your private conversation.':'Your profile and privacy choices.';
+ window.dispatchEvent(new CustomEvent('xparty:social-view',{detail:view}));
  if(!$('account-dialog').open)$('account-dialog').showModal();
 }
 for(const b of document.querySelectorAll('[data-social-view]'))b.onclick=()=>socialView(b.dataset.socialView);
