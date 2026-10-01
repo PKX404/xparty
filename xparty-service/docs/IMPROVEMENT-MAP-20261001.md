@@ -1,6 +1,6 @@
 # Xparty improvement map and validation
 
-This revision preserves the lime Hero design. It is a draft, not a production release. Server tests pass; browser and real-device validation remain outstanding.
+This revision preserves the lime Hero design. Version 0.10.0 implements the core room improvements. Browser interface and simulated playback checks now pass. The account/cloud services and real-device media validation remain incomplete; this is not completion of every requested feature.
 
 | Requested outcome | Revision / remaining work |
 |---|---|
@@ -44,3 +44,13 @@ Automatic recovery is normal; force buttons retry it. Force sync does not grant 
 ## Release gate
 
 Before rollout: browser smoke tests, touch/swipe and viewport review, two-device video/audio/YouTube/local-file sync tests, TURN relay checks, account provider configuration, localization audit. The virtual browser and remaining sound/theatre/layout work need a subsequent implementation phase. No claim of universal zero-glitch or millisecond synchronization is made.
+
+## Release verification update
+
+Version 0.10.0: 15 server tests pass, including watch-only PTT requests with the four-seat limit enforced. Local Chromium smoke tests pass for joining, remembered names, crown/mic/camera status, chat delivery, internal theme choices, capacity slider, sound/display/language preferences, friend-message navigation independent of room chat, simulated YouTube drift correction, no buffering seek loops, force sync, and layouts at 320/390/844/1366 pixels. Source switches reveal playback controls and the YouTube wrapper no longer intercepts them. Pending approval cards stay above the chat scroll area.
+
+Theatre now has Fit/Fill screen, a personal light/dark Theme switch, labeled upper-corner Video call/Chat/Both controls, with focus in the playback strip. Sound settings group playback, call and notification levels with a master notification switch. UI labels and generated internal selectors have expanded Hindi/Kannada localization; translations are not claimed exhaustive.
+
+WebRTC offer/answer negotiation completed, but local Chromium gathered zero ICE candidates. Media transport is explicitly BLOCKED, not a passing end-to-end call test. Set XPARTY_REQUIRE_MEDIA=1 to make that block fail the smoke test in a media-capable environment. Genuine two-device/different-network media and YouTube playback tests remain necessary.
+
+Google/OTP/cross-room accounts require Supabase/provider setup; TURN relay credentials and a cloud-browser worker service are not configured. Netflix/Prime/virtual browser are not implemented or advertised as working. The earlier draft release gate is superseded only for the interface and simulated playback checks completed above.

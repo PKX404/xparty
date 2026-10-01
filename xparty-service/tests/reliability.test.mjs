@@ -26,3 +26,12 @@ test('buffering leases recover stale waits and the host can keep the timeline ru
  a.send('buffer-policy',{enabled:false});await b.next('state',m=>m.room.bufferTogether===false);b.send('buffering',{sourceId:source.id,buffering:true});b.send('ping',{sent:4});await b.next('pong',m=>m.sent===4);assert.deepEqual(app.rooms.get(aw.room.code).playback.waitingFor,[]);assert.equal(app.rooms.get(aw.room.code).playback.playing,true);
  }finally{await app.close();}
 });
+test('watch-only participants can request push to talk without bypassing the four-seat limit',async()=>{
+ const app=createXparty();await new Promise(r=>app.server.listen(0,'127.0.0.1',r));try{
+ const port=app.server.address().port,a=await client(port);a.send('create',{capacity:5});const aw=await a.next('welcome');const guests=[];
+ for(let i=0;i<4;i++){const c=await client(port);c.send('join',{code:aw.room.code});guests.push({c,w:await c.next('welcome')});}
+ const last=guests[3],r=app.rooms.get(aw.room.code);assert.equal(r.people.get(last.w.id).inCall,false);a.send('ptt-enable',{enabled:true});await last.c.next('state',m=>m.room.pttEnabled);last.c.send('ptt-request');await a.next('state',m=>m.room.people.find(p=>p.id===last.w.id)?.pttRequested);
+ a.send('ptt-review',{target:last.w.id,approve:true});await a.next('error',m=>m.message.includes('four call seats'));assert.equal(r.people.get(last.w.id).inCall,false);
+ guests[0].c.send('call-leave');await a.next('state',m=>!m.room.people.find(p=>p.id===guests[0].w.id)?.inCall);a.send('ptt-review',{target:last.w.id,approve:true});await last.c.next('ptt-status',m=>m.approved);assert.equal(r.people.get(last.w.id).inCall,true);assert.equal([...r.people.values()].filter(p=>p.inCall).length,4);
+ }finally{await app.close();}
+});

@@ -117,8 +117,8 @@ export function createXparty(options={}) {
    if(m.type==='request-camera'&&!host){p.cameraRequested=true;state(r);return;}
    if(m.type==='buffer-policy'){if(!host)return;r.bufferTogether=m.enabled===true;state(r);return;}
    if(m.type==='ptt-enable'){if(!host)return;r.pttEnabled=m.enabled===true;if(!r.pttEnabled)for(const x of r.people.values()){if(x.pttTalking)x.mic=false;x.pttTalking=false;}state(r);return;}
-   if(m.type==='ptt-request'){if(!r.pttEnabled||!p.inCall||p.micBlocked)return;if(!p.pttApproved&&rate('ptt:'+p.id,4,60000)){p.pttRequested=true;state(r);}return;}
-   if(m.type==='ptt-review'){if(!host)return;const target=r.people.get(m.target);if(!target||!target.pttRequested)return;target.pttRequested=false;target.pttApproved=m.approve===true;send(target.ws,{type:'ptt-status',approved:target.pttApproved});state(r);return;}
+   if(m.type==='ptt-request'){if(!r.pttEnabled||p.micBlocked)return;if((!p.pttApproved||!p.inCall)&&rate('ptt:'+p.id,4,60000)){p.pttRequested=true;state(r);}return;}
+   if(m.type==='ptt-review'){if(!host)return;const target=r.people.get(m.target);if(!target||!target.pttRequested||!r.pttEnabled||!online(target)||target.micBlocked)return;if(m.approve===true&&!target.inCall){if([...r.people.values()].filter(x=>online(x)&&x.inCall).length>=4)return send(ws,{type:'error',message:'All four call seats are occupied. Free a seat before approving push to talk.'});target.inCall=true;target.callSeatApproved=true;target.seatRequested=false;target.session=(target.session||0)+1;}target.pttRequested=false;target.pttApproved=m.approve===true;send(target.ws,{type:'ptt-status',approved:target.pttApproved});state(r);return;}
    if(m.type==='media'){p.pttTalking=m.ptt===true;p.mic=m.mic===true&&!p.micBlocked&&p.inCall&&(!p.pttTalking||(r.pttEnabled===true&&(p.id===r.hostId||p.pttApproved===true)));p.camera=m.camera===true&&(host||p.cameraAllowed)&&p.inCall;state(r);return;}
    if(m.type==='typing'){if(p.chatBlocked)return;
     if(!rate('typing:'+p.id,4,2000))return;const target=m.to?r.people.get(m.to):null;if(m.to&&!target)return;const event={type:'typing',from:p.id,name:p.name,to:target?.id||null,active:m.active===true};if(target)send(target.ws,event);else for(const x of r.people.values())if(x!==p)send(x.ws,event);return;
@@ -179,5 +179,5 @@ export function createXparty(options={}) {
  const maintenance=setInterval(()=>{for(const ws of wss.clients){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}for(const[key,b]of buckets)if(b.until<Date.now())buckets.delete(key);},30000);maintenance.unref();
  return {server,rooms,close:async()=>{clearInterval(maintenance);clearInterval(recovery);attachments.close();clearTimeout(saveTimer);for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));for(const id of files.keys())dropFile(id);}};
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){const app=createXparty();app.server.listen(Number(process.env.PORT||8787),'0.0.0.0',()=>console.log('Xparty 0.9 listening on '+(process.env.PORT||8787)));const stop=()=>app.close().then(()=>process.exit(0));process.on('SIGTERM',stop);process.on('SIGINT',stop);}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){const app=createXparty();app.server.listen(Number(process.env.PORT||8787),'0.0.0.0',()=>console.log('Xparty 0.10 listening on '+(process.env.PORT||8787)));const stop=()=>app.close().then(()=>process.exit(0));process.on('SIGTERM',stop);process.on('SIGINT',stop);}
 

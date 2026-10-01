@@ -242,3 +242,36 @@ body:not(.focus-call) #room #participants.duo:has(.participant:not(.self).camera
 
 .host-crown{display:inline-block!important;position:relative;min-height:15px!important;min-width:15px!important;width:15px!important;height:15px!important;padding:0!important;border:0!important;background:transparent!important;color:#d5ed58!important}.host-crown:before{width:15px!important;height:15px!important}
 .info>summary{border:0!important;background:transparent!important;box-shadow:none!important}.info[open]{z-index:90}.info p{font-size:11px;line-height:1.4;max-width:min(280px,80vw)}
+
+/* Release controls: one sound section, compact view labels and deliberate media fit. */
+#room-settings-button{display:none!important}
+.entry-card #preview{border:0!important;background:transparent!important;box-shadow:none!important;padding:8px 0!important;color:var(--text)!important}.entry-card #preview:hover{color:var(--lime)!important}
+#youtube-wrap{pointer-events:none!important}
+#room .conversation-tabs{justify-content:flex-end;align-items:center;background:none!important;border:0!important;padding:0!important;gap:3px!important}
+#room .conversation-tabs button{flex:0 1 auto!important;border:0!important;background:transparent!important;box-shadow:none!important;min-width:0!important;padding:5px 8px!important;min-height:28px!important;font-size:11px!important}
+#room .conversation-tabs button[aria-pressed=true]{color:var(--lime)}
+#room .conversation-tabs #call-controls-toggle{width:26px;flex:none!important;font-size:0!important}
+#room .conversation-tabs button,.cinema:not(.focus-call) #room .conversation-tabs button{color:var(--muted)!important;font-size:11px!important;padding:4px 7px!important;flex:0 1 auto!important}
+#room .conversation-tabs button[aria-pressed=true],.cinema:not(.focus-call) #room .conversation-tabs button[aria-pressed=true]{color:var(--text)!important}
+#room .conversation-tabs button:after{bottom:1px;height:1px}.cinema:not(.focus-call) #room .conversation-tabs{gap:3px!important;justify-content:flex-end}
+.media-status .icon-control::before,.host-crown::before{display:block!important}
+#participants .person-label{grid-template-columns:minmax(0,1fr) auto auto!important;gap:3px!important}.person-label>.media-status{grid-column:2;grid-row:1;margin:0;overflow:visible!important}.person-label>.tile-friend{grid-column:3!important;grid-row:1!important}.person-label small{grid-column:1/-1!important}.person-label>span:first-child .host-crown{margin-left:4px;vertical-align:middle}
+#participants .person-label>.media-status{grid-column:1/-1!important;grid-row:2!important;justify-content:flex-start;gap:7px!important}#participants .person-label>.host-crown{grid-column:2;grid-row:1}#participants[data-active="0"] .person-label small{display:none!important}#participants .person-label>span:first-child{grid-column:1;grid-row:1}
+.call-panel .panel-title{justify-content:space-between;align-items:center}.call-panel .panel-title h2{flex:none!important;font-size:11px!important;white-space:nowrap}
+.call-panel .panel-title .call-seat-row{justify-content:flex-end;flex:1 1 auto;min-width:0;flex-wrap:wrap!important;gap:2px!important}
+.call-panel .panel-title .call-seat-row #call-seats{flex:none;font-size:10px;margin-right:4px}
+.call-panel .panel-title .call-seat-row button{width:25px!important;min-width:25px!important;height:25px!important;min-height:25px!important}
+.cinema[data-view=movie] .call-panel .panel-title{display:flex!important}.cinema[data-view=movie] .call-panel #call-seats{display:inline!important}
+#notification-settings{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:10px}#notification-settings>p{margin:0;font-size:11px}#notification-settings>label{margin:0}
+#approval-tray:empty{display:none}#approval-tray{flex:none;max-height:32dvh;overflow:auto;display:grid;gap:4px;padding:3px 0;border-bottom:1px solid var(--line)}#approval-tray .message{margin:0;padding:0}#approval-tray .approval-card{font-size:11px;padding:7px;gap:5px}#approval-tray .request-actions{flex:none}
+.settings-dialog .dialog-actions{position:sticky;bottom:0;background:var(--panel);padding:8px 0;margin-bottom:0;z-index:5}
+.settings-dialog label{min-width:0}.settings-dialog input[type=range]{min-width:0;max-width:100%}
+.cinema[data-theatre-fit=cover]:not(.focus-call) #room .watch-stage{height:calc(100dvh - 100px)!important;max-height:none!important;aspect-ratio:auto!important;overflow:hidden}
+.cinema[data-theatre-fit=cover] #file-player{object-fit:cover!important;width:100%!important;height:100%!important}
+.cinema[data-theatre-fit=cover] .watch-stage iframe{position:absolute;left:50%;top:50%;width:max(100%,calc((100dvh - 100px)*16/9))!important;height:max(100%,calc((100vw - 30px)*9/16))!important;transform:translate(-50%,-50%);max-width:none!important;max-height:none!important}
+html[data-display=light]{color-scheme:light;--bg:#f4f6ee;--panel:#fff;--line:#cbd3c3;--muted:#54604b;--text:#192017;color:var(--text)}
+html[data-display=light] body{background:var(--bg);color:var(--text)}html[data-display=light] .settings-dialog,html[data-display=light] .chat-panel,html[data-display=light] .call-panel,html[data-display=light] .entry-card,html[data-display=light] .room-menu-content,html[data-display=light] .select-options,html[data-display=light] .select-trigger{background:var(--panel)!important;color:var(--text)!important;border-color:var(--line)!important}
+html[data-display=light] .topbar{background:#f4f6eef2!important;color:var(--text)}html[data-display=light] input:not([type=range]):not([type=checkbox]),html[data-display=light] textarea{background:#edf1e8!important;color:var(--text)!important;border-color:var(--line)!important}
+html[data-display=light] .secondary,html[data-display=light] .quiet,html[data-display=light] .select-options button{color:var(--text)!important}html[data-display=light] .topbar .brand-icon,html[data-display=light] .hero-brand .brand-icon{color:#0b0d12!important}
+@media(max-width:760px) and (orientation:portrait){.cinema[data-theatre-fit=cover]:not(.focus-call) #room .watch-stage{height:calc(100dvh - 100px)!important;min-height:220px!important}.call-panel .panel-title .call-seat-row{flex-basis:100%;justify-content:flex-end}.call-panel .panel-title h2{flex:1!important}}
+@media(max-width:960px) and (orientation:landscape){.cinema[data-theatre-fit=cover]:not(.focus-call) #room .watch-stage{height:calc(100dvh - 75px)!important}}
