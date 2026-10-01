@@ -36,7 +36,7 @@ export function createXparty(options={}) {
  const callSeats=createCallSeats({online,send,state,rate});
  const attachments=createAttachmentStore({online:p=>online(p)&&clients.get(p.token)===p&&rooms.has(p.code)});
  function broadcast(r,obj){for(const p of r.people.values())send(p.ws,obj);}
- function snapshot(r){return {code:r.code,hostId:r.hostId,ownerId:r.ownerId||r.hostId,...partyState(r),hostReconnecting:!online(r.people.get(r.hostId)||{}),theme:r.theme||null,guestThemes:!!r.guestThemes,autoplay:r.autoplay!==false,capacity:r.capacity,locked:r.locked,source:r.source,playback:r.playback,queue:r.queue||[],people:[...r.people.values()].map(p=>({id:p.id,name:p.name,session:p.session||0,online:online(p),presence:online(p)?'ACTIVE':p.left?'LEFT':'DISCONNECTED',reservedUntil:p.reservedUntil||null,inCall:!!p.inCall,mic:p.mic,camera:p.camera,ready:p.ready,loadStatus:p.loadStatus||'',chatBlocked:!!p.chatBlocked,micBlocked:p.micBlocked,cameraAllowed:p.cameraAllowed,cameraRequested:p.cameraRequested,seatRequested:!!p.seatRequested})),serverTime:Date.now()};}
+ function snapshot(r){return {code:r.code,hostId:r.hostId,ownerId:r.ownerId||r.hostId,...partyState(r),hostReconnecting:!online(r.people.get(r.hostId)||{}),bufferTogether:r.bufferTogether!==false,pttEnabled:!!r.pttEnabled,theme:r.theme||null,guestThemes:!!r.guestThemes,autoplay:r.autoplay!==false,capacity:r.capacity,locked:r.locked,source:r.source,playback:r.playback,queue:r.queue||[],people:[...r.people.values()].map(p=>({id:p.id,name:p.name,session:p.session||0,online:online(p),presence:online(p)?'ACTIVE':p.left?'LEFT':'DISCONNECTED',reservedUntil:p.reservedUntil||null,inCall:!!p.inCall,mic:p.mic,camera:p.camera,ready:p.ready,loadStatus:p.loadStatus||'',chatBlocked:!!p.chatBlocked,micBlocked:p.micBlocked,cameraAllowed:p.cameraAllowed,cameraRequested:p.cameraRequested,pttApproved:!!p.pttApproved,pttRequested:!!p.pttRequested,seatRequested:!!p.seatRequested})),serverTime:Date.now()};}
  function state(r){syncBuffering(r);broadcast(r,{type:'state',room:snapshot(r)});persist();}
  function ice(id){const out=[{urls:'stun:stun.l.google.com:19302'}];if(process.env.TURN_URLS&&process.env.TURN_SECRET){const username=`${Math.floor(Date.now()/1000)+86400}:${id}`;out.push({urls:process.env.TURN_URLS.split(','),username,credential:createHmac('sha1',process.env.TURN_SECRET).update(username).digest('base64')});}if(process.env.ICE_SERVERS_JSON)out.push(...JSON.parse(process.env.ICE_SERVERS_JSON));return out;}
  function welcome(p,r){const iceServers=ice(p.id);send(p.ws,{type:'welcome',id:p.id,token:p.token,room:snapshot(r),friendRequests:social.view(r,p),history:(r.history||[]).filter(m=>!m.to||m.from===p.id||m.to===p.id),iceServers,hasRelay:iceServers.some(s=>[s.urls].flat().some(u=>/^turns?:/.test(u))),searchEnabled:true});}
@@ -55,14 +55,14 @@ export function createXparty(options={}) {
   state(r);
  }
  function occupied(r,except=null){return [...r.people.values()].filter(x=>x.id!==except&&(online(x)||(!x.left&&x.reservedUntil>Date.now()))).length;}
- function syncBuffering(r){if(r.source?.type!=='youtube')return;const waiting=[...r.people.values()].filter(x=>online(x)&&x.buffering).map(x=>x.id);const old=r.playback.waitingFor||[];if(JSON.stringify(old)===JSON.stringify(waiting))return;const p=r.playback;const position=p.position+(p.playing&&!old.length?Math.max(0,Date.now()-p.updatedAt)/1000:0);r.playback={...p,position,updatedAt:Date.now(),waitingFor:waiting};broadcast(r,{type:'playback',sourceId:r.source.id,playback:r.playback,serverTime:Date.now()});}
+ function syncBuffering(r){if(r.source?.type!=='youtube')return;const waiting=r.bufferTogether===false?[]:[...r.people.values()].filter(x=>online(x)&&x.buffering&&Date.now()-(x.bufferingAt||0)<(options.bufferingLeaseMs??15000)).map(x=>x.id);const old=r.playback.waitingFor||[];if(JSON.stringify(old)===JSON.stringify(waiting))return;const p=r.playback;const position=p.position+(p.playing&&!old.length?Math.max(0,Date.now()-p.updatedAt)/1000:0);r.playback={...p,position,updatedAt:Date.now(),waitingFor:waiting};broadcast(r,{type:'playback',sourceId:r.source.id,playback:r.playback,serverTime:Date.now()});}
  const authenticate=req=>{const p=clients.get(String(req.headers.authorization||'').replace(/^Bearer /,''));return p&&online(p)?p:null;};
  const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');if(originOK(req)){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');}
   res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-File-Offset, X-Attachment-Name, X-Attachment-To');res.setHeader('Access-Control-Allow-Methods','GET, PUT, POST, OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
   const json=(status,body)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
   if(req.method==='OPTIONS'){res.writeHead(originOK(req)?204:403);return res.end();}
-  if(url.pathname==='/health')return json(200,{ok:true,service:'Xparty',version:'0.9.0'});
+  if(url.pathname==='/health')return json(200,{ok:true,service:'Xparty',version:'0.10.0'});
   if(url.pathname==='/api/accounts/config')return json(200,{enabled:!!(process.env.SUPABASE_URL&&publicAuthKey),url:publicAuthKey?process.env.SUPABASE_URL||null:null,publicKey:publicAuthKey,phoneEnabled:process.env.SUPABASE_PHONE_ENABLED==='true'});
   if(url.pathname==='/api/room-status'&&req.method==='GET'){
    if(req.headers.origin&&!originOK(req))return json(403,{error:'Origin not allowed'});
@@ -115,7 +115,11 @@ export function createXparty(options={}) {
     send(target.ws,{type:'moderation',action:m.action});state(r);return;
    }
    if(m.type==='request-camera'&&!host){p.cameraRequested=true;state(r);return;}
-   if(m.type==='media'){p.mic=m.mic===true&&!p.micBlocked&&p.inCall;p.camera=m.camera===true&&(host||p.cameraAllowed)&&p.inCall;state(r);return;}
+   if(m.type==='buffer-policy'){if(!host)return;r.bufferTogether=m.enabled===true;state(r);return;}
+   if(m.type==='ptt-enable'){if(!host)return;r.pttEnabled=m.enabled===true;if(!r.pttEnabled)for(const x of r.people.values()){if(x.pttTalking)x.mic=false;x.pttTalking=false;}state(r);return;}
+   if(m.type==='ptt-request'){if(!r.pttEnabled||!p.inCall||p.micBlocked)return;if(!p.pttApproved&&rate('ptt:'+p.id,4,60000)){p.pttRequested=true;state(r);}return;}
+   if(m.type==='ptt-review'){if(!host)return;const target=r.people.get(m.target);if(!target||!target.pttRequested)return;target.pttRequested=false;target.pttApproved=m.approve===true;send(target.ws,{type:'ptt-status',approved:target.pttApproved});state(r);return;}
+   if(m.type==='media'){p.pttTalking=m.ptt===true;p.mic=m.mic===true&&!p.micBlocked&&p.inCall&&(!p.pttTalking||(r.pttEnabled===true&&(p.id===r.hostId||p.pttApproved===true)));p.camera=m.camera===true&&(host||p.cameraAllowed)&&p.inCall;state(r);return;}
    if(m.type==='typing'){if(p.chatBlocked)return;
     if(!rate('typing:'+p.id,4,2000))return;const target=m.to?r.people.get(m.to):null;if(m.to&&!target)return;const event={type:'typing',from:p.id,name:p.name,to:target?.id||null,active:m.active===true};if(target)send(target.ws,event);else for(const x of r.people.values())if(x!==p)send(x.ws,event);return;
    }
@@ -134,7 +138,7 @@ export function createXparty(options={}) {
    if(m.type==='queue-remove'&&host){r.queue=r.queue.filter(q=>q.id!==m.id);state(r);return true;}
    if(['queue-play','next','previous'].includes(m.type)&&host){const item=m.type==='previous'?r.previousSource:m.type==='next'?(r.autoplay===false?[...r.queue].sort((a,b)=>(b.votes?.length||0)-(a.votes?.length||0)||a.createdAt-b.createdAt)[0]:r.queue[0]):r.queue.find(q=>q.id===m.id);if(item){const previous=r.source?.type==='youtube'?{videoId:r.source.videoId,title:r.source.title}:null;r.queue=r.queue.filter(q=>q.id!==item.id);control.cancel(r,'Video changed.');const result=choose(r,p,{type:'youtube',videoId:item.videoId,title:item.title});r.previousSource=previous;return result;}return false;}
    if(m.type==='ready'&&m.sourceId===r.source?.id){p.ready=m.ready===true;p.loadStatus=clean(m.status,100)||(p.ready?'Ready':'Loading');state(r);return;}
-   if(m.type==='buffering'&&r.source?.type==='youtube'&&m.sourceId===r.source.id){p.buffering=m.buffering===true&&r.playback.playing;syncBuffering(r);return;}
+   if(m.type==='buffering'&&r.source?.type==='youtube'&&m.sourceId===r.source.id){p.buffering=m.buffering===true&&r.playback.playing;p.bufferingAt=Date.now();syncBuffering(r);return;}
    if(m.type==='rename'){const name=clean(m.name,24);if(name){p.name=name;state(r);}return;}
    if(m.type==='resync'){send(ws,{type:'playback',resync:true,sourceId:r.source?.id,playback:r.playback,serverTime:Date.now()});return true;}
    if(m.type==='playback'&&r.source&&m.sourceId===r.source.id&&finite(m.position)&&typeof m.playing==='boolean'){
@@ -171,8 +175,9 @@ export function createXparty(options={}) {
   }catch{send(ws,{type:'error',message:'Invalid request'});}});
   ws.on('close',()=>{clearTimeout(timeout);const p=ws.person;if(p&&p.ws===ws&&clients.has(p.token)){p.ws=null;p.buffering=false;p.inCall=false;p.mic=false;p.camera=false;p.ready=false;p.disconnectedAt=Date.now();p.reservedUntil=Date.now()+graceMs;const r=rooms.get(p.code);if(r){if(r.controller?.id===p.id)r.controller=null;state(r);}}});
  });
- const recovery=setInterval(()=>{for(const r of rooms.values()){control.sweep(r);const host=r.people.get(r.hostId);if(host&&!online(host)&&host.reservedUntil&&host.reservedUntil<=Date.now()){const next=[...r.people.values()].filter(online).sort((a,b)=>a.joinedAt-b.joinedAt)[0];if(next){control.cancel(r,'Host reconnect window elapsed.');r.hostId=next.id;next.cameraAllowed=true;next.micBlocked=false;state(r);}}}},250);recovery.unref();
+ const recovery=setInterval(()=>{for(const r of rooms.values()){syncBuffering(r);control.sweep(r);const host=r.people.get(r.hostId);if(host&&!online(host)&&host.reservedUntil&&host.reservedUntil<=Date.now()){const next=[...r.people.values()].filter(online).sort((a,b)=>a.joinedAt-b.joinedAt)[0];if(next){control.cancel(r,'Host reconnect window elapsed.');r.hostId=next.id;next.cameraAllowed=true;next.micBlocked=false;state(r);}}}},250);recovery.unref();
  const maintenance=setInterval(()=>{for(const ws of wss.clients){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}for(const[key,b]of buckets)if(b.until<Date.now())buckets.delete(key);},30000);maintenance.unref();
  return {server,rooms,close:async()=>{clearInterval(maintenance);clearInterval(recovery);attachments.close();clearTimeout(saveTimer);for(const ws of wss.clients)ws.terminate();await new Promise(r=>wss.close(r));await new Promise(r=>server.close(r));for(const id of files.keys())dropFile(id);}};
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){const app=createXparty();app.server.listen(Number(process.env.PORT||8787),'0.0.0.0',()=>console.log('Xparty 0.9 listening on '+(process.env.PORT||8787)));const stop=()=>app.close().then(()=>process.exit(0));process.on('SIGTERM',stop);process.on('SIGINT',stop);}
+

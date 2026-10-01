@@ -30,6 +30,7 @@ export function createPartyControl({online,send,state,execute,now=Date.now,reque
   if(m.type==='approval-settings'){if(host){if(['manual','approve','reject'].includes(m.policy))r.approvalPolicy=m.policy;r.autoSync=m.autoSync===true;r.autoPause=m.autoPause===true;state(r);}return true;}
   if(m.type==='party-mode'){if(host)mode(r,m.mode);else request(r,p,{type:'party-mode',mode:m.mode});return true;}
   if(m.type==='request-control'){if(!host&&r.mode==='SHARED_CONTROL')request(r,p,{type:'request-control'});return true;}
+  if(m.type==='resync')return false;
   const controlled=['playback','source','next','previous','queue-play','queue-add','queue-remove','resync'];if(!controlled.includes(m.type))return false;
   if(m.type==='playback'&&(!Number.isFinite(m.position)||m.position<0||m.position>604800||typeof m.playing!=='boolean'||m.sourceId!==r.source?.id))return true;
   // A reconnect snapshot and periodic anchors are recovery traffic, not guest actions.
@@ -40,3 +41,4 @@ export function createPartyControl({online,send,state,execute,now=Date.now,reque
  }
  return {handle,sweep,cancel};
 }
+
