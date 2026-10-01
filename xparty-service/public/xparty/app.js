@@ -22,7 +22,19 @@ function status(text) {$('sync-status').lastChild.textContent=' '+t(text);}
 function notice(text) {$('connection-notice').textContent=text||'Connected. Share the room code privately.';}
 function send(type, fields={}) {if(['playback','source','next','previous','party-mode'].includes(type))fields.eventId??=crypto.randomUUID();if(type==='playback'&&!fields.intent)fields.intent=Math.abs((fields.position||0)-currentTime())>1?'seek':fields.playing?'play':'pause';if(preview) {toast('This is a design preview. Create a room to connect.');return false;}if(socket?.readyState!==WebSocket.OPEN){toast('Room connection is offline. Reconnecting…');return false;}socket.send(JSON.stringify({type,...fields}));return true;}
 function ping() {if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'ping',sent:Date.now()}));}
-function connect(action) {
+let serviceWarmup, preparingConnection=false;
+const serviceStatus=document.createElement('p');serviceStatus.className='small';serviceStatus.setAttribute('role','status');serviceStatus.hidden=true;$('create').parentElement.append(serviceStatus);
+function warmService(){
+ if(serviceWarmup)return serviceWarmup;
+ serviceWarmup=(async()=>{const deadline=Date.now()+100000;while(Date.now()<deadline){try{const response=await fetch(base+'/health',{cache:'no-store',signal:AbortSignal.timeout(12000)});const data=await response.json();if(response.ok&&data.ok&&data.service==='Xparty')return;}catch{}await new Promise(resolve=>setTimeout(resolve,2000));}throw new Error('The party server is taking longer than expected. Please try again.');})().finally(()=>{serviceWarmup=null;});return serviceWarmup;
+}
+// One bounded warm-up per visit; no idle keep-alive traffic.
+if(base!==location.origin)warmService().catch(()=>{});
+async function connect(action) {
+ if(preparingConnection)return;
+ if(!room){preparingConnection=true;$('create').disabled=true;$('join-button').disabled=true;serviceStatus.hidden=false;serviceStatus.textContent=t('Connecting to the party server… First connection may take about a minute.');
+ try{await warmService();}catch(error){toast(error.message);return;}finally{preparingConnection=false;serviceStatus.hidden=true;$('create').disabled=false;$('join-button').disabled=false;}}
+
   preview=false;intentionalClose=false;clearTimeout(reconnectTimer);clearTimeout(connectTimer);
   $('create').disabled=true;$('join-form').querySelector('button').disabled=true;
   let url;try{url=new URL(base);url.protocol=url.protocol==='https:'?'wss:':'ws:';url.pathname='/ws';url.search='';}catch{toast('The room service address is invalid.');return;}
@@ -441,9 +453,10 @@ $('messages').addEventListener('scroll',markVisibleRead,{passive:true});document
 function conversation(mode){vcVisible=mode!=='chat';chatVisible=mode!=='call';updateTheatre();}
 let swipeStart;
 const swipePanel=document.querySelector('.together-column');
-swipePanel.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.target.closest('input,button,select,textarea,a,[role=separator],.messages'))return;swipeStart={id:e.pointerId,x:e.clientX,y:e.clientY};});
-swipePanel.addEventListener('pointermove',e=>{if(!swipeStart||e.pointerId!==swipeStart.id)return;const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;if(Math.abs(dy)>30&&Math.abs(dy)>Math.abs(dx)){swipeStart=null;return;}if(Math.abs(dx)>25&&Math.abs(dx)>Math.abs(dy)*1.4){e.preventDefault();swipePanel.setPointerCapture(e.pointerId);}});
-swipePanel.addEventListener('pointerup',e=>{if(!swipeStart||e.pointerId!==swipeStart.id)return;const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;swipeStart=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4)conversation(dx<0?'chat':'call');});swipePanel.addEventListener('pointercancel',()=>swipeStart=null);
+swipePanel.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button!==0||e.target.closest('input,button,select,textarea,a,[role=separator]'))return;swipeStart={id:e.pointerId,x:e.clientX,y:e.clientY};swipePanel.setPointerCapture(e.pointerId);});
+swipePanel.addEventListener('pointermove',e=>{if(!swipeStart||e.pointerId!==swipeStart.id)return;const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;if(Math.abs(dy)>20&&Math.abs(dy)>Math.abs(dx)){swipeStart=null;return;}if(Math.abs(dx)>=45&&Math.abs(dx)>Math.abs(dy)*1.4){e.preventDefault();swipeStart=null;conversation(dx<0?'chat':'call');}});
+function finishSwipe(e){if(swipeStart&&e.pointerId===swipeStart.id){const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;swipeStart=null;if(e.type==='pointerup'&&Math.abs(dx)>=45&&Math.abs(dx)>Math.abs(dy)*1.4)conversation(dx<0?'chat':'call');}if(swipePanel.hasPointerCapture(e.pointerId))swipePanel.releasePointerCapture(e.pointerId);}
+swipePanel.addEventListener('pointerup',finishSwipe);swipePanel.addEventListener('pointercancel',finishSwipe);swipePanel.addEventListener('lostpointercapture',()=>swipeStart=null);
 $('speaker').onclick=async()=>{const blocked=[...peers.values()].some(p=>p.audioBlocked);if(blocked){speakerOn=true;await unlockAudio();$('speaker').classList.remove('audio-needs-tap');}else speakerOn=!speakerOn;$('speaker').setAttribute('aria-pressed',speakerOn);for(const p of peers.values())attachRemoteAudio(p);};
 $('expand-call').onclick=()=>{const expanded=document.body.classList.toggle('call-expanded');$('expand-call').setAttribute('aria-pressed',expanded);if(expanded)conversation('call');};
 $('theatre-view').onchange=()=>{viewMode=$('theatre-view').value;document.body.dataset.view=viewMode;if(viewMode==='call')conversation('call');else conversation('both');};
@@ -567,7 +580,7 @@ function renderRoomFriends(){if(!room){$('room-friend-list').replaceChildren();$
  }if(!box.children.length)box.textContent='Invite someone with your room code to connect.';const pendingFriend=friendRequests.some(q=>q.to===me&&q.status==='pending');$('nav-notifications').classList.toggle('has-notice',pendingFriend);$('nav-settings').classList.toggle('has-notice',pendingFriend);}
 window.addEventListener('xparty:room-friends',()=>{renderRoomFriends();$('room-friends-dialog').showModal();});
 function renderPoll(card,poll){card.className='poll-card';card.replaceChildren();const question=document.createElement('strong');question.textContent=poll.question;card.append(question);const total=Object.keys(poll.votes).length;poll.options.forEach((option,i)=>{const count=Object.values(poll.votes).filter(v=>v===i).length;const b=document.createElement('button');b.type='button';b.textContent=option+' · '+count;b.setAttribute('aria-pressed',poll.votes[me]===i);b.style.setProperty('--vote-share',(total?count/total*100:0)+'%');b.onclick=()=>send('poll-vote',{id:poll.id,choice:i});card.append(b);});const detail=document.createElement('small');detail.textContent=total+' vote'+(total===1?'':'s')+' · Tap to change your choice';card.append(detail);}
-$('create-poll').onclick=()=>{if(!room||preview)return toast('Join a live room to create a poll.');$('poll-dialog').showModal();$('poll-question').focus();};$('send-poll').onclick=()=>{const question=$('poll-question').value.trim(),options=$('poll-options').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!question||options.length<2||options.length>6||new Set(options).size!==options.length)return toast('Add a question and 2–6 different choices.');send('poll-create',{question,options});$('poll-dialog').close();$('poll-question').value='';$('poll-options').value='';};icon($('create-poll'),'poll','Create poll');icon($('exit-theatre'),'close','Exit theatre');icon($('call-controls-toggle'),'more','Show call controls');
+$('send-poll').onclick=()=>{const question=$('poll-question').value.trim(),options=$('poll-options').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!question||options.length<2||options.length>6||new Set(options).size!==options.length)return toast('Add a question and 2–6 different choices.');send('poll-create',{question,options});$('poll-dialog').close();$('poll-question').value='';$('poll-options').value='';};icon($('exit-theatre'),'close','Exit theatre');icon($('call-controls-toggle'),'more','Show call controls');
 const callPanel=document.querySelector('.call-panel');let callControlTimer;
 function revealCallControls(){callPanel.classList.remove('call-controls-hidden');$('call-controls-toggle').setAttribute('aria-expanded','true');clearTimeout(callControlTimer);callControlTimer=setTimeout(()=>{if(!callPanel.querySelector(':focus-visible')){callPanel.classList.add('call-controls-hidden');$('call-controls-toggle').setAttribute('aria-expanded','false');}},3000);}
 for(const event of['pointermove','pointerdown','focusin'])callPanel.addEventListener(event,e=>{if(!e.target.closest('#call-controls-toggle'))revealCallControls();});$('call-controls-toggle').onclick=()=>{if(callPanel.classList.contains('call-controls-hidden'))revealCallControls();else{callPanel.classList.add('call-controls-hidden');$('call-controls-toggle').setAttribute('aria-expanded','false');}};
@@ -649,3 +662,11 @@ $('room-settings-button').hidden=true;$('auto-sync').closest('label').hidden=tru
 $('settings-dialog').addEventListener('toggle',()=>{if($('settings-dialog').open){populateSettings();document.dispatchEvent(new Event('xparty:localized'));}});
 
 localize();
+
+// Both microphone controls operate the same track and mirror its state.
+const chatMic=document.createElement('button');chatMic.id='chat-mic';chatMic.type='button';chatMic.className='icon-control';icon(chatMic,'mic',t('Microphone'));document.querySelector('.chat-panel .panel-title').append(chatMic);chatMic.onclick=()=>toggleMedia('audio');
+function mirrorMic(){chatMic.disabled=$('mic').disabled;const active=$('mic').getAttribute('aria-pressed')==='true';chatMic.setAttribute('aria-pressed',String(active));chatMic.setAttribute('aria-label',t(active?'Mic on':'Mic off'));chatMic.classList.toggle('mic-muted',!active);$('mic').classList.toggle('mic-muted',!active);}
+new MutationObserver(mirrorMic).observe($('mic'),{attributes:true,attributeFilter:['disabled','aria-pressed']});mirrorMic();
+$('join-button').textContent=t('Join');const gate=document.createElement('span');gate.className='join-gate';gate.setAttribute('aria-hidden','true');gate.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V4h12v17M3 4l8-2v20l-8-1M15 21h6M15 12h7m-3-3 3 3-3 3"/><path d="M8 12h1"/></svg>';$('join-button').append(gate);
+// Keep tabs and call actions in one compact header.
+icon($('call-controls-toggle'),'menu',t('Show call controls'));
