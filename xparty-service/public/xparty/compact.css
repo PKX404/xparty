@@ -275,3 +275,9 @@ html[data-display=light] .topbar{background:#f4f6eef2!important;color:var(--text
 html[data-display=light] .secondary,html[data-display=light] .quiet,html[data-display=light] .select-options button{color:var(--text)!important}html[data-display=light] .topbar .brand-icon,html[data-display=light] .hero-brand .brand-icon{color:#0b0d12!important}
 @media(max-width:760px) and (orientation:portrait){.cinema[data-theatre-fit=cover]:not(.focus-call) #room .watch-stage{height:calc(100dvh - 100px)!important;min-height:220px!important}.call-panel .panel-title .call-seat-row{flex-basis:100%;justify-content:flex-end}.call-panel .panel-title h2{flex:1!important}}
 @media(max-width:960px) and (orientation:landscape){.cinema[data-theatre-fit=cover]:not(.focus-call) #room .watch-stage{height:calc(100dvh - 75px)!important}}
+
+.join-gate{display:inline-flex;width:23px;height:23px;margin-left:7px;vertical-align:middle}.join-gate svg{width:100%;height:100%}
+.call-panel .panel-title{flex-wrap:wrap;gap:6px}.call-panel .panel-title>.tiny{display:none}.call-panel .panel-title>.conversation-tabs{flex:1 1 100%;margin:0;padding:0;border:0;background:none}.call-seat-row .icon-control,.local-controls .icon-control,#chat-mic,#call-controls-toggle{border:0!important;background:transparent!important;box-shadow:none!important}.chat-panel .panel-title #chat-mic{margin-left:auto}.mic-muted:after{content:'';position:absolute;width:24px;height:2px;background:#e797a3;transform:rotate(-50deg)}
+.together-column,.together-column .messages,.together-column .participant{touch-action:pan-y}
+
+.together-column>.conversation-tabs{margin:0;padding:0 3px;min-height:30px;border:0;background:transparent;gap:5px}.together-column{gap:3px}.conversation-tabs #call-controls-toggle{margin-left:auto}
