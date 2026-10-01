@@ -1,3 +1,4 @@
+import {createOwnerControl} from './owner-control.mjs';
 import {createCallSeats} from './call-seats.mjs';
 import {createRoomSocial} from './room-social.mjs';
 import http from 'node:http';
@@ -30,7 +31,7 @@ export function createXparty(options={}) {
  if(statePath)try{for(const r of JSON.parse(readFileSync(statePath,'utf8'))){r.people=new Map(r.people.map(p=>{p.ws=null;clients.set(p.token,p);return[p.id,p];}));rooms.set(r.code,r);}}catch{}
  function rate(key,limit,ms){const now=Date.now();let b=buckets.get(key);if(!b||b.until<now){b={count:0,until:now+ms};buckets.set(key,b);}return ++b.count<=limit;}
  const ip=req=>process.env.TRUST_PROXY==='1'?String(req.headers['x-forwarded-for']||req.socket.remoteAddress).split(',').at(-1).trim():req.socket.remoteAddress;
- function send(ws,obj){if(ws?.readyState===WebSocket.OPEN){if(ws.bufferedAmount>1024*1024)return ws.close(1013,'Slow connection');ws.send(JSON.stringify(obj));}}
+ function send(ws,obj){if(ws?.readyState===WebSocket.OPEN){if(ws.bufferedAmount>1024*1024)return ws.close(1013,'Slow connection');const payload=JSON.stringify(obj);owner.observeOutput(Buffer.byteLength(payload));ws.send(payload);}}
  const online=p=>p.ws?.readyState===WebSocket.OPEN;
  const social=createRoomSocial({send,broadcast,online,rate,persist});
  const callSeats=createCallSeats({online,send,state,rate});
@@ -57,11 +58,14 @@ export function createXparty(options={}) {
  function occupied(r,except=null){return [...r.people.values()].filter(x=>x.id!==except&&(online(x)||(!x.left&&x.reservedUntil>Date.now()))).length;}
  function syncBuffering(r){if(r.source?.type!=='youtube')return;const waiting=r.bufferTogether===false?[]:[...r.people.values()].filter(x=>online(x)&&x.buffering&&Date.now()-(x.bufferingAt||0)<(options.bufferingLeaseMs??15000)).map(x=>x.id);const old=r.playback.waitingFor||[];if(JSON.stringify(old)===JSON.stringify(waiting))return;const p=r.playback;const position=p.position+(p.playing&&!old.length?Math.max(0,Date.now()-p.updatedAt)/1000:0);r.playback={...p,position,updatedAt:Date.now(),waitingFor:waiting};broadcast(r,{type:'playback',sourceId:r.source.id,playback:r.playback,serverTime:Date.now()});}
  const authenticate=req=>{const p=clients.get(String(req.headers.authorization||'').replace(/^Bearer /,''));return p&&online(p)?p:null;};
- const server=http.createServer(async(req,res)=>{
+ function endRoom(r,message){for(const p of r.people.values()){clients.delete(p.token);send(p.ws,{type:'ended',message});if(p.ws){p.ws.person=null;p.ws.close(1000,'Ended');}}if(r.source?.type==='file')dropFile(r.source.id);attachments.clearRoom(r.code);rooms.delete(r.code);persist();}
+ const owner=createOwnerControl({rooms,online,originOK,rate,send,state,remove,endRoom});
+ const server=http.createServer(async(req,res)=>{owner.countRequest();
   const url=new URL(req.url,'http://localhost');if(originOK(req)){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');}
-  res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-File-Offset, X-Attachment-Name, X-Attachment-To');res.setHeader('Access-Control-Allow-Methods','GET, PUT, POST, OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-File-Offset, X-Attachment-Name, X-Attachment-To');res.setHeader('Access-Control-Allow-Methods','GET, PUT, POST, OPTIONS');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
   const json=(status,body)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
   if(req.method==='OPTIONS'){res.writeHead(originOK(req)?204:403);return res.end();}
+  if(await owner.handle(req,res,url,json,ip(req)))return;
   if(url.pathname==='/health')return json(200,{ok:true,service:'Xparty',version:'0.10.0'});
   if(url.pathname==='/api/accounts/config')return json(200,{enabled:!!(process.env.SUPABASE_URL&&publicAuthKey),url:publicAuthKey?process.env.SUPABASE_URL||null:null,publicKey:publicAuthKey,phoneEnabled:process.env.SUPABASE_PHONE_ENABLED==='true'});
   if(url.pathname==='/api/room-status'&&req.method==='GET'){
@@ -99,9 +103,9 @@ export function createXparty(options={}) {
   if(req.method!=='GET')return json(405,{error:'Method not allowed'});
   let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return json(400,{error:'Invalid URL'});}
   // Serve the application at the short root URL, retaining old /xparty/ links.
-  if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
+  if(pathname==='/owner'||pathname==='/owner/')pathname='/xparty/owner.html';else if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
   if(pathname.endsWith('/'))pathname+='index.html';const path=resolve(ROOT,'.'+pathname);if(!path.startsWith(ROOT+'/'))return json(403,{error:'Forbidden'});
-  try{const data=await readFile(path);res.writeHead(200,{'Content-Type':({'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'})[extname(path)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data);}catch{return json(404,{error:'Not found'});}
+  try{const data=await readFile(path);res.writeHead(200,{'Content-Type':({'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml','.json':'application/json'})[extname(path)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data);}catch{return json(404,{error:'Not found'});}
  });
  const control=createPartyControl({online:p=>!!p&&online(p),send,state,execute:(p,r,m)=>dispatch(p.ws,m,true),requestMs:options.requestMs??30000,lockMs:options.lockMs??10000});
  function dispatch(ws,m,approved=false){
@@ -155,7 +159,7 @@ export function createXparty(options={}) {
  server.on('upgrade',(req,socket,head)=>{if(req.url!=='/ws'||!originOK(req)||!rate('connect:'+ip(req),60,60000)||wss.clients.size>500){socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');return socket.destroy();}wss.handleUpgrade(req,socket,head,ws=>wss.emit('connection',ws,req));});
  wss.on('connection',(ws,req)=>{
   ws.alive=true;ws.on('pong',()=>ws.alive=true);ws.on('error',()=>{});const timeout=setTimeout(()=>{if(!ws.person)ws.close(1008,'Join timeout');},20000);
-  ws.on('message',raw=>{try{
+  ws.on('message',raw=>{owner.observeMessage(raw.length);try{
    if(!rate('message:'+(ws.person?.id||ip(req)),240,10000))return send(ws,{type:'error',message:'Too many actions. Wait a moment.'});const m=JSON.parse(raw);if(!m||typeof m!=='object')return;
    if(m.type==='ping')return send(ws,{type:'pong',sent:m.sent,serverTime:Date.now()});
    if(['create','join','resume'].includes(m.type)){
@@ -166,7 +170,8 @@ export function createXparty(options={}) {
      // A valid saved token may replace the old socket during an immediate page refresh.
      if(p.ws&&p.ws!==ws){p.ws.person=null;p.ws.close(4000,'Session resumed in another connection');}p.ready=false;p.buffering=false;p.mic=false;p.camera=false;
     }else{
-     if(m.type==='create'){if(rooms.size>=100)return send(ws,{type:'error',message:'Room capacity reached. End unused rooms first.'});let c;do{c=code();}while(rooms.has(c));r={code:c,hostId:null,bufferTogether:false,capacity:Number.isInteger(m.capacity)&&m.capacity>=2&&m.capacity<=10?m.capacity:2,locked:false,people:new Map(),source:null,queue:[],history:[],playback:{position:0,playing:false,updatedAt:Date.now(),revision:0}};rooms.set(c,r);}
+     if(!owner.admissionsOpen())return send(ws,{type:'error',message:'New room admissions are temporarily paused by the service owner. Existing rooms can reconnect.'});
+     if(m.type==='create'){if(rooms.size>=owner.roomLimit())return send(ws,{type:'error',message:'Room capacity reached. End unused rooms first.'});let c;do{c=code();}while(rooms.has(c));r={code:c,hostId:null,bufferTogether:false,capacity:Number.isInteger(m.capacity)&&m.capacity>=2&&m.capacity<=10?m.capacity:2,locked:false,people:new Map(),source:null,queue:[],history:[],playback:{position:0,playing:false,updatedAt:Date.now(),revision:0}};rooms.set(c,r);}
      else{r=rooms.get(clean(m.code,12).toUpperCase());if(!r||r.locked)return send(ws,{type:'error',message:'Room unavailable. Check the code or ask the host to unlock it.'});if(occupied(r)>=r.capacity)return send(ws,{type:'error',message:'This room is full.'});}
      const host=!r.hostId;p={id:randomUUID(),token:secret(),name:clean(m.name,24)||(host?'Host':'Guest '+(r.guestCounter=(r.guestCounter||0)+1)),code:r.code,ws,mic:false,camera:false,ready:false,micBlocked:false,cameraAllowed:host,cameraRequested:false};r.people.set(p.id,p);clients.set(p.token,p);r.hostId??=p.id;r.ownerId??=p.id;
     }

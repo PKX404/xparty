@@ -1,0 +1,8 @@
+# Xparty Android 1.0
+Dedicated Android app for the existing https://pkxparty.onrender.com deployment. Android 8 or newer, system Android WebView required. This is a native Android shell around the shared Xparty interface, with no browser address bar. It is not a separate Kotlin/native rewrite of the room UI.
+
+Native integration: camera/microphone runtime consent, system document picker without broad storage permission, room sharing, fullscreen media, per-activity Android PiP, screen wake while calling/watching, safe room-exit confirmation, persistent WebView preferences, verified application links and connection retry screen. Camera PiP chooses a floated participant first, then a remote active camera, then self. Android supports one system PiP window; additional participant tiles can float inside the app.
+
+Install the signed APK. Allow installation from the app that opened the APK if Android asks. Camera/mic are requested only when used. Google sign-in still needs the web deployment's provider configuration; external sign-in opens in the system browser and returns through the verified app link when configured. The free Render server can sleep; the APK does not eliminate server cold starts. Android may stop background media outside visible PiP; no foreground service is claimed. Physical-device validation is needed before a Play Store release.
+
+Build: install Java 17, Android platform 35 and build tools 35.0.0. Set XPARTY_ANDROID_SDK, XPARTY_KEYSTORE and XPARTY_STORE_PASS, then run ./build-apk.sh. Keep the original private signing key for every update. APK package: com.pkx404.xparty; version code 1. Secrets and build outputs are excluded from Git.
