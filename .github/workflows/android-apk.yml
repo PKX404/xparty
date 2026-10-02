@@ -21,7 +21,16 @@ jobs:
           distribution: temurin
           java-version: "17"
       - name: Install Android SDK packages
-        run: /usr/local/lib/android/sdk/cmdline-tools/16.0/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          SDKMANAGER="$(find /usr/local/lib/android/sdk "$HOME" -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found; listing Android SDK"
+            find /usr/local/lib/android/sdk -maxdepth 4 -type f 2>/dev/null | head -200
+            exit 1
+          fi
+          echo "Using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Create signing key
         run: |
           KEY_PASS="xparty-ci-${{ github.run_id }}-${{ github.run_attempt }}"
