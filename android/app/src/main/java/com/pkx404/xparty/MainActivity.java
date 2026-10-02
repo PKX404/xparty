@@ -67,4 +67,31 @@ html,body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}.xpar
  private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density);}
  private void hideError(){if(error!=null){root.removeView(error);error=null;}}
  private void showError(String text){hideError();error=new LinearLayout(this);error.setOrientation(LinearLayout.VERTICAL);error.setGravity(Gravity.CENTER);error.setPadding(dp(24),dp(24),dp(24),dp(24));error.setBackgroundColor(Color.rgb(14,17,26));TextView title=new TextView(this);title.setText("Xparty");title.setTextColor(Color.rgb(216,251,140));title.setTextSize(26);TextView message=new TextView(this);message.setText(text);message.setTextColor(Color.WHITE);message.setPadding(0,dp(20),0,dp(20));Button retry=new Button(this);retry.setText("Retry connection");retry.setOnClickListener(v->{hideError();web.reload();});error.addView(title);error.addView(message);error.addView(retry);root.addView(error,new FrameLayout.LayoutParams(-1,-1));}
-}
+}  private void installAppExperience(){
+   String css="html,body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}"
+    +".xparty-native-ux button,.xparty-native-ux .icon-control,.xparty-native-ux .nav-button,.xparty-native-ux a[role=button]{min-width:48px!important;min-height:48px!important;border-radius:16px!important}"
+    +".xparty-native-ux button:active,.xparty-native-ux .icon-control:active{transform:scale(.94)!important}"
+    +".xparty-native-ux input,.xparty-native-ux textarea,.xparty-native-ux select{min-height:52px!important;font-size:16px!important;border-radius:16px!important}"
+    +".xparty-native-ux .topbar{padding:8px 12px!important;min-height:58px!important;background:#0e111af2!important;backdrop-filter:blur(20px)}"
+    +".xparty-native-ux .participant-strip{position:sticky;top:0;z-index:30;padding:8px 4px!important;background:#0e111ae8!important;backdrop-filter:blur(18px)}"
+    +".xparty-native-ux .conversation-tabs{position:sticky;top:58px;z-index:25;padding:5px!important;border-radius:18px!important;background:#151a25e8!important}"
+    +".xparty-native-ux .conversation-tabs button{min-height:46px!important;font-size:14px!important;font-weight:700!important}"
+    +".xparty-native-ux .call-panel,.xparty-native-ux .chat-panel{border-radius:24px!important}"
+    +".xparty-native-ux .call-panel{padding:10px!important}"
+    +".xparty-native-ux #chat-form{position:sticky;bottom:0;padding:8px!important;background:#151a25f2!important}"
+    +".xparty-native-ux #chat-form button[type=submit]{width:52px!important;height:52px!important}"
+    +".xparty-native-ux #message-input{height:52px!important}"
+    +".xparty-native-ux #participants .participant{border-radius:22px!important}"
+    +".xparty-native-ux #participants .local-controls .icon-control{width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;background:#10151dcc!important;border-radius:50%!important}"
+    +".xparty-native-ux .tile-pip{width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;border-radius:14px!important}"
+    +".xparty-native-ux #empty-player{border-radius:28px!important}"
+    +".xparty-native-ux #empty-player .source-pills button,.xparty-native-ux #empty-player .source-pills a{min-height:48px!important;padding:0 20px!important;font-size:15px!important}"
+    +".xparty-native-ux .player-bar{gap:6px!important;padding:8px 4px!important}.xparty-native-ux .player-bar .icon-control{width:48px!important;height:48px!important}"
+    +".xparty-native-ux .room-menu-content{position:fixed!important;left:10px!important;right:10px!important;bottom:10px!important;top:auto!important;width:auto!important;max-height:72dvh!important;border-radius:26px 26px 18px 18px!important;padding:16px!important}"
+    +".xparty-native-ux #toast{left:14px!important;right:14px!important;bottom:22px!important;max-width:none!important;border-radius:18px!important;padding:14px 16px!important;font-size:14px!important}"
+    +".xparty-native-ux .settings-dialog{width:calc(100vw - 20px)!important;max-height:88dvh!important;border-radius:28px!important}"
+    +"@media(max-width:760px){.xparty-native-ux #room{padding-left:8px!important;padding-right:8px!important}.xparty-native-ux .room-grid{gap:8px!important}.xparty-native-ux .participant-strip h2{font-size:13px!important}.xparty-native-ux .participant-strip .icon-control{width:44px!important;min-width:44px!important;height:44px!important}.xparty-native-ux #participants{--mobile-call-height:min(54dvh,430px)!important}.xparty-native-ux #participants.duo:not([data-active='0']) .participant:not(.self){height:var(--mobile-call-height)!important}.xparty-native-ux #participants.duo.self-large .participant.self{height:var(--mobile-call-height)!important}.xparty-native-ux .person-label{font-size:13px!important}.xparty-native-ux .cinema:not(.focus-call) #room .watch-stage{max-height:44dvh!important}.xparty-native-ux .cinema[data-conversation=both]:not(.focus-call) #room .chat-panel{height:32dvh!important}.xparty-native-ux #android-share{min-height:48px!important;display:flex!important;align-items:center!important;justify-content:center!important}}";
+   String js="(()=>{if(document.querySelector('#xparty-native-ux'))return;document.body.classList.add('xparty-native-ux');const s=document.createElement('style');s.id='xparty-native-ux';s.textContent="+org.json.JSONObject.quote(css)+";document.head.append(s);document.querySelectorAll('button').forEach(b=>b.setAttribute('data-native-touch','1'));})()";
+   web.evaluateJavascript(js,null);
+  }
+
