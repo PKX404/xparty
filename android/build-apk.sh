@@ -20,6 +20,6 @@ with zipfile.ZipFile('build/unsigned.apk','a',compression=zipfile.ZIP_STORED) as
  for dex in Path('build/dex').glob('*.dex'):apk.write(dex,dex.name)
 PY
 "$tools/zipalign" -f -P 16 4 build/unsigned.apk build/aligned.apk
-"$tools/apksigner" sign --ks "$XPARTY_KEYSTORE" --ks-key-alias xparty --ks-pass env:XPARTY_STORE_PASS --key-pass env:XPARTY_STORE_PASS --out build/Xparty-1.1.1.apk build/aligned.apk
-"$tools/apksigner" verify --verbose --print-certs build/Xparty-1.1.1.apk
-"$tools/zipalign" -c -P 16 4 build/Xparty-1.1.1.apk
+"$tools/apksigner" sign --ks "$XPARTY_KEYSTORE" --ks-key-alias xparty --ks-pass env:XPARTY_STORE_PASS --key-pass env:XPARTY_STORE_PASS --out build/Xparty-1.1.2.apk build/aligned.apk
+"$tools/apksigner" verify --verbose --print-certs build/Xparty-1.1.2.apk
+"$tools/zipalign" -c -P 16 4 build/Xparty-1.1.2.apk
