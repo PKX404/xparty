@@ -1,5 +1,6 @@
 // Optional account layer. Guest rooms have no dependency on the auth provider.
 const $=id=>document.getElementById(id),base=(window.XPARTY_CONFIG?.backendUrl||location.origin).replace(/\/$/,'');
+let authMode="signin",authReady=false,otpAddress=null,otpMethod=null;
 let client,session,friend=null,pollBusy=false,call=null,pc=null,stream=null,signalAfter=0,pendingIce=[],signalBusy=false;let photoData=null;
 const status=text=>$('account-status').textContent=text;
 async function run(fn){try{await fn();}catch(e){status(e.message||'Account action failed. Try again.');}}
@@ -7,15 +8,15 @@ function check(result){if(result.error)throw result.error;return result.data;}
 function button(text,action){const b=document.createElement('button');b.className='secondary';b.textContent=text;b.onclick=()=>run(action);return b;}
 function publicName(user){return user.user_metadata?.full_name?.slice(0,24)||'Friend '+user.id.slice(0,5);}
 async function init(){
- const config=await fetch(base+'/api/accounts/config').then(r=>r.json());
- if(!config.enabled){$('auth-form').hidden=false;for(const control of $('auth-form').querySelectorAll('input,select,button'))control.disabled=true;status('Email and phone sign-in are awaiting provider setup. Guest rooms are ready to use. No account details are collected here until setup is complete.');return;}
+ const config=await fetch(base+'/api/accounts/config',{signal:AbortSignal.timeout(12000)}).then(r=>{if(!r.ok)throw Error('Account service is unavailable. Guest rooms are still available.');return r.json();});
+ if(!config.enabled){$('auth-form').hidden=false;for(const control of $('auth-form').querySelectorAll('input,select,button'))control.disabled=true;status('Account registration is not available yet. Continue as a guest to watch and call.');$('account-dialog').dataset.provider='unavailable';return;}
  const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.117.2');client=createClient(config.url,config.publicKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
- $('auth-method').querySelector('[value=phone]').disabled=!config.phoneEnabled;
+ authReady=true;$('account-dialog').dataset.provider='ready';$('auth-method').querySelector('[value=phone]').disabled=!config.phoneEnabled;
  client.auth.onAuthStateChange((_event,next)=>{session=next;if(next?.provider_token)sessionStorage.setItem('xparty-google-token',next.provider_token);setTimeout(()=>run(refreshProfile),0);});session=check(await client.auth.getSession()).session;await refreshProfile();
  setInterval(()=>run(poll),2500);
 }
 async function refreshProfile(){
- $('auth-form').hidden=!!session;$('account-profile').hidden=!session;if(!session){status('Sign in with a one-time code, or continue as a guest.');return;}
+ window.dispatchEvent(new CustomEvent('xparty:account-session',{detail:{signedIn:!!session}}));$('account-dialog').classList.toggle('signed-in',!!session);$('auth-form').hidden=!!session;$('account-profile').hidden=!session;if(!session){status('Sign in with a one-time code, or continue as a guest.');return;}
  let profile=check(await client.from('xparty_profiles').select('*').eq('id',session.user.id).maybeSingle());if(!profile){profile={id:session.user.id,display_name:publicName(session.user)};check(await client.from('xparty_profiles').insert(profile));}
  $('profile-name').value=profile.display_name;photoData=profile.photo_data||null;showPhoto();const details=check(await client.from('xparty_private_profiles').select('age').eq('id',session.user.id).maybeSingle());$('profile-age').value=details?.age||'';$('friend-code').textContent='Your friend ID: '+session.user.id;status('Signed in as '+profile.display_name);await loadFriends();
 }
@@ -31,8 +32,16 @@ async function googleFetch(url){const token=sessionStorage.getItem('xparty-googl
 async function libraries(){const token=sessionStorage.getItem('xparty-google-token');if(!token)return google('openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/drive.readonly');const box=$('google-results');box.replaceChildren();box.append(button('Reconnect Google permissions',()=>google('openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/drive.readonly')));const playlists=await(await googleFetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50')).json();for(const list of playlists.items||[])box.append(button('Playlist: '+list.snippet.title,async()=>{const result=await(await googleFetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId='+encodeURIComponent(list.id))).json();for(const item of result.items||[])if(item.snippet.resourceId?.videoId)window.dispatchEvent(new CustomEvent('xparty:queue',{detail:{videoId:item.snippet.resourceId.videoId,title:item.snippet.title}}));status('Added the first 50 playlist items to your current room, up to its queue limit.');}));const files=await(await googleFetch('https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({q:"mimeType contains 'video/' and trashed=false",pageSize:'50',fields:'files(id,name,mimeType,size)'}))).json();for(const file of files.files||[])box.append(button('Share Drive video: '+file.name,async()=>{if(!window.XPARTY_SESSION_STATE?.().isHost)throw Error('Create a room as host before sharing a Drive video.');if(Number(file.size)>250*1024*1024)throw Error('This file exceeds the 250 MB room limit.');if(!await window.XPARTY_ASK('Share this Drive video with everyone in your current room? It will be temporarily uploaded to the room server.'))return;const response=await googleFetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(file.id)+'?alt=media');const blob=await response.blob();window.dispatchEvent(new CustomEvent('xparty:share-file',{detail:new File([blob],file.name,{type:file.mimeType})}));}));}
 for(const id of ['open-profile','open-friends'])$(id).onclick=()=>{$('account-dialog').showModal();};
 $('account-guest').onclick=()=>$('account-dialog').close();
-$('send-otp').onclick=()=>run(async()=>{if(!$('privacy-consent').checked)throw Error('Confirm that you are 18 or older and have read the privacy notice.');const method=$('auth-method').value,address=$('auth-address').value.trim();if(method==='phone'&&!/^\+[1-9]\d{7,14}$/.test(address))throw Error('Use international phone format, such as +91 followed by your number.');check(await client.auth.signInWithOtp({[method]:address}));$('otp-step').hidden=false;status('Code requested. Check your email or phone.');});
-$('verify-otp').onclick=()=>run(async()=>{const method=$('auth-method').value;check(await client.auth.verifyOtp({[method]:$('auth-address').value.trim(),token:$('otp-code').value.trim(),type:method==='phone'?'sms':'email'}));});
+$('send-otp').onclick=()=>run(async()=>{
+ if(!authReady)throw Error('Account registration is not available yet. Continue as a guest.');
+ if(!$('privacy-consent').checked)throw Error('Confirm that you are 18 or older and have read the privacy notice.');
+ const method=$('auth-method').value,address=$('auth-address').value.trim();
+ if(method==='phone'&&!/^\+[1-9]\d{7,14}$/.test(address))throw Error('Use international format, such as +91 followed by your number.');
+ if(method==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))throw Error('Enter a valid email address.');
+ $('send-otp').disabled=true;status('Requesting your verification code…');
+ try{check(await client.auth.signInWithOtp({[method]:address,options:{shouldCreateUser:authMode==='signup'}}));otpAddress=address;otpMethod=method;$('otp-step').hidden=false;status('Check your '+(method==='phone'?'phone':'email')+' for the verification code.');$('otp-code').focus();}finally{$('send-otp').disabled=false;}
+});
+$('verify-otp').onclick=()=>run(async()=>{if(!authReady||!otpAddress)throw Error('Request a code first.');const token=$('otp-code').value.trim();if(!/^\d{6,10}$/.test(token))throw Error('Enter the complete verification code.');$('verify-otp').disabled=true;try{check(await client.auth.verifyOtp({[otpMethod]:otpAddress,token,type:otpMethod==='phone'?'sms':'email'}));}finally{$('verify-otp').disabled=false;}});
 $('google-login').onclick=()=>run(()=>google());$('google-library').onclick=()=>run(libraries);
 $('save-profile').onclick=()=>run(async()=>{const age=$('profile-age').value?Number($('profile-age').value):null;if(age!==null&&(!Number.isInteger(age)||age<18||age>120))throw Error('Age must be between 18 and 120, or leave it blank.');if(!$('profile-name').value.trim())throw Error('Enter a display name.');check(await client.from('xparty_profiles').update({display_name:$('profile-name').value.trim(),photo_data:photoData}).eq('id',session.user.id));check(await client.from('xparty_private_profiles').upsert({id:session.user.id,age}));status('Profile saved.');});
 $('add-friend').onclick=()=>run(async()=>{const id=$('friend-id').value.trim();if(!/^[0-9a-f-]{36}$/i.test(id))throw Error('Paste the complete friend ID.');check(await client.from('xparty_friends').insert({requester:session.user.id,addressee:id}));await loadFriends();});
@@ -41,7 +50,7 @@ $('sign-out').onclick=()=>run(async()=>{await endCall();check(await client.auth.
 $('direct-call').onclick=()=>run(async()=>{if(window.XPARTY_SESSION_STATE?.().inRoom)throw Error('Exit your watch room before starting a private call.');if(call)throw Error('End the current call first.');call=check(await client.from('xparty_calls').insert({caller:session.user.id,callee:friend.id}).select().single());$('friend-answer').hidden=true;$('friend-call-status').textContent='Calling '+friend.name+'…';$('friend-call-dialog').showModal();});
 $('friend-answer').onclick=()=>run(async()=>{await makePeer();check(await client.from('xparty_calls').update({status:'accepted'}).eq('id',call.id));$('friend-answer').hidden=true;});$('friend-hangup').onclick=()=>run(()=>endCall());$('friend-remote').onclick=()=>$('friend-remote').play();
 $('friend-call-dialog').addEventListener('cancel',e=>{e.preventDefault();run(()=>endCall());});$('friend-call-dialog .close-dialog')?.addEventListener('click',()=>run(()=>endCall()));
-window.addEventListener('pagehide',()=>{stream?.getTracks().forEach(t=>t.stop());pc?.close();});run(init);
+window.addEventListener('pagehide',()=>{stream?.getTracks().forEach(t=>t.stop());pc?.close();});run(async()=>{try{await init();}catch(e){$('auth-form').hidden=false;for(const el of $('auth-form').querySelectorAll('input,select,button'))el.disabled=true;throw Error('Unable to connect to the account service. Reopen the app to retry, or continue as a guest.');}});
 
 function showPhoto(){$('profile-photo-preview').hidden=!photoData;$('profile-photo-preview').src=photoData||'';}
 $('profile-photo').onchange=()=>run(async()=>{const file=$('profile-photo').files[0];if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>1024*1024)throw Error('Choose a JPG, PNG or WebP photo smaller than 1 MB.');const bitmap=await createImageBitmap(file);const canvas=document.createElement('canvas');canvas.width=canvas.height=192;const size=Math.min(bitmap.width,bitmap.height);canvas.getContext('2d').drawImage(bitmap,(bitmap.width-size)/2,(bitmap.height-size)/2,size,size,0,0,192,192);bitmap.close();photoData=canvas.toDataURL('image/jpeg',.8);showPhoto();status('Photo ready. Press Save profile to store it.');});
@@ -62,3 +71,11 @@ $('room-add-friend').onclick=()=>{if(window.XPARTY_SESSION_STATE?.().inRoom){win
 $('nav-messages').onclick=()=>socialView('messages');
 $('open-profile').onclick=()=>socialView('profile');$('open-friends').onclick=()=>socialView('friends');
 
+
+const authTabs=document.createElement('div');authTabs.className='auth-tabs';authTabs.setAttribute('role','group');authTabs.setAttribute('aria-label','Account access');
+for(const [mode,label]of[['signin','Sign in'],['signup','Create account']]){const b=document.createElement('button');b.type='button';b.dataset.authMode=mode;b.textContent=label;b.onclick=()=>setAuthMode(mode);authTabs.append(b);}
+$('account-status').before(authTabs);
+function setAuthMode(mode){authMode=mode==='signup'?'signup':'signin';$('account-dialog').dataset.authMode=authMode;$('account-dialog').querySelector('h2').textContent=session?'Your profile':authMode==='signup'?'Your people await.':'Welcome back.';for(const b of authTabs.children)b.setAttribute('aria-pressed',String(b.dataset.authMode===authMode));$('send-otp').textContent=authMode==='signup'?'Create account with a code':'Send sign-in code';$('otp-step').hidden=true;otpAddress=null;$('otp-code').value='';}
+window.addEventListener('xparty:auth-mode',e=>setAuthMode(e.detail));
+$('auth-method').addEventListener('change',()=>{const phone=$('auth-method').value==='phone';$('auth-address').type=phone?'tel':'email';$('auth-address').placeholder=phone?'+91 98765 43210':'you@example.com';$('otp-step').hidden=true;otpAddress=null;});
+$('auth-address').type='email';$('auth-address').placeholder='you@example.com';$('account-status').setAttribute('role','status');setAuthMode('signin');
