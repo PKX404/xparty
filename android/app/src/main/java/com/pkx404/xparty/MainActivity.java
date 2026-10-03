@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
+import android.media.AudioManager;
 import android.os.*;
 import android.util.Rational;
 import android.view.*;
@@ -25,11 +26,11 @@ public final class MainActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(14,17,26));setContentView(root);
   root.setOnApplyWindowInsetsListener((view,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
   web=new WebView(this);web.setBackgroundColor(Color.rgb(14,17,26));root.addView(web,new FrameLayout.LayoutParams(-1,-1));
-  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/1.1 NativeShell");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
+  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/1.1.3 NativeShell");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
   progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(100);FrameLayout.LayoutParams bar=new FrameLayout.LayoutParams(-1,dp(3),Gravity.TOP);root.addView(progress,bar);
   web.setWebViewClient(new WebViewClient(){
    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri u=request.getUrl();if(!request.isForMainFrame())return false;if("xparty-native".equals(u.getScheme())){if(trusted(view.getUrl())){if("pip".equals(u.getHost()))enterPip();else if("share".equals(u.getHost()))shareRoom();}return true;}if(trusted(u.toString()))return false;if("https".equals(u.getScheme())||"http".equals(u.getScheme())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception e){toast("No app can open this link.");}}return true;}
-   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();installAppExperience();CookieManager.getInstance().flush();}}
+   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();installRenderingStability();CookieManager.getInstance().flush();}}
    @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError failure){if(request.isForMainFrame())showError("Unable to connect. Check your internet and retry. Free hosting may take a moment to wake up.");}
    @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()>=500)showError("The server is starting or temporarily unavailable. Retry in a moment.");}
   });
@@ -43,52 +44,79 @@ public final class MainActivity extends Activity {
   });
   if(state==null||web.restoreState(state)==null){Uri incoming=getIntent().getData();web.loadUrl(incoming!=null&&trusted(incoming.toString())?incoming.toString():HOME);}handler.post(monitor);
  }
- private void requestMediaPermissions(){if(mediaPermissionPromptActive)return;ArrayList<String> needed=new ArrayList<>();if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)needed.add(Manifest.permission.CAMERA);if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)needed.add(Manifest.permission.RECORD_AUDIO);if(needed.isEmpty()){grantMedia();return;}mediaPermissionPromptActive=true;requestPermissions(needed.toArray(new String[0]),7);}
- private void grantMedia(){mediaPermissionPromptActive=false;ArrayList<PermissionRequest> requests=new ArrayList<>(pendingPermissions);pendingPermissions.clear();for(PermissionRequest request:requests){ArrayList<String> granted=new ArrayList<>();for(String resource:request.getResources()){if(PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)granted.add(resource);if(PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)&&checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)granted.add(resource);}if(granted.isEmpty())request.deny();else request.grant(granted.toArray(new String[0]));}}
- @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==7){grantMedia();if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)toast("Microphone permission is off. Allow Microphone for Xparty in Android app permissions.");}}
+ private String androidPermission(String resource){
+  if(PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource))return Manifest.permission.RECORD_AUDIO;
+  if(PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource))return Manifest.permission.CAMERA;
+  return null;
+ }
+ private void requestMediaPermissions(){
+  if(mediaPermissionPromptActive||pendingPermissions.isEmpty()||!alive)return;
+  ArrayList<String> needed=new ArrayList<>();
+  for(PermissionRequest request:pendingPermissions)for(String resource:request.getResources()){
+   String permission=androidPermission(resource);
+   if(permission!=null&&checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED&&!needed.contains(permission))needed.add(permission);
+  }
+  if(needed.isEmpty()){settleMediaRequests(new String[0]);return;}
+  mediaPermissionPromptActive=true;
+  requestPermissions(needed.toArray(new String[0]),7);
+ }
+ private void settleMediaRequests(String[] resolved){
+  boolean denied=false;
+  for(PermissionRequest request:new ArrayList<>(pendingPermissions)){
+   if(!alive||!trusted(web.getUrl())||!trusted(request.getOrigin().toString())){pendingPermissions.remove(request);request.deny();continue;}
+   ArrayList<String> granted=new ArrayList<>();boolean unasked=false;
+   for(String resource:request.getResources()){
+    String permission=androidPermission(resource);if(permission==null)continue;
+    if(checkSelfPermission(permission)==PackageManager.PERMISSION_GRANTED)granted.add(resource);
+    else if(!java.util.Arrays.asList(resolved).contains(permission))unasked=true;
+   }
+   // A second WebView request can arrive while Android is showing the first prompt.
+   if(unasked)continue;
+   pendingPermissions.remove(request);
+   if(granted.isEmpty()){request.deny();denied=true;}else request.grant(granted.toArray(new String[0]));
+  }
+  if(denied&&!isFinishing())new AlertDialog.Builder(this).setTitle("Allow call access")
+   .setMessage("Enable Microphone or Camera for Xparty in Android permissions, then tap the call button again.")
+   .setNegativeButton("Close",null).setPositiveButton("App permissions",(d,w)->startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())))).show();
+ }
+ @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
+  super.onRequestPermissionsResult(code,permissions,results);
+  if(code==7){mediaPermissionPromptActive=false;if(permissions.length==0){for(PermissionRequest request:new ArrayList<>(pendingPermissions))request.deny();pendingPermissions.clear();return;}settleMediaRequests(permissions);requestMediaPermissions();}
+ }
  @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==8&&fileCallback!=null){ArrayList<Uri> files=new ArrayList<>();if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)files.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)files.add(data.getData());}fileCallback.onReceiveValue(files.isEmpty()?null:files.toArray(new Uri[0]));fileCallback=null;}}
  private void installNativeControls(){web.evaluateJavascript("(()=>{document.body.classList.add('android-app');if(!document.querySelector('#android-pip')){const b=document.createElement('a');b.id='android-pip';b.href='xparty-native://pip';b.textContent='▣';b.setAttribute('aria-label','Android picture in picture');b.title='Android picture in picture';b.className='icon-control';document.querySelector('.participant-strip .call-seat-row')?.append(b);}if(!document.querySelector('#android-share')){const b=document.createElement('a');b.id='android-share';b.href='xparty-native://share';b.textContent='Share room';b.className='secondary';document.querySelector('.room-menu-content')?.append(b);}if(!document.querySelector('#android-style')){const s=document.createElement('style');s.id='android-style';s.textContent='.android-app #android-pip{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:inherit;font-size:23px;min-width:30px}.android-app #android-share{display:inline-block;text-decoration:none}.native-pip main,.native-pip .topbar,.native-pip footer{visibility:hidden}.native-pip #room #participants[data-active][data-count] .participant.native-pip-selected{visibility:visible!important;position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-height:none!important;z-index:9999!important;border:0!important;border-radius:0!important}.native-pip .native-pip-selected video{width:100%!important;height:100%!important;object-fit:contain!important}.native-pip .native-pip-selected .tile-pip,.native-pip .native-pip-selected .tile-move,.native-pip .native-pip-selected .tile-resize,.native-pip .native-pip-selected .local-controls{display:none!important}';document.head.append(s);}})()",null);}
- private void installAppExperience(){web.evaluateJavascript("document.body.classList.add('xparty-native-ux');",null);}
  private void enterPip(){if(!getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)){toast("Picture in picture is unavailable on this device.");return;}web.evaluateJavascript("(()=>{const p=document.querySelector('.floating-participant.camera-active')||document.querySelector('.participant:not(.self).camera-active')||document.querySelector('.participant.self.camera-active');if(!p)return false;document.querySelectorAll('.native-pip-selected').forEach(e=>e.classList.remove('native-pip-selected'));p.classList.add('native-pip-selected');document.body.classList.add('native-pip');return true;})()",value->{if(!"true".equals(value)){toast("Turn on a camera to use Android picture in picture.");return;}try{boolean entered=enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(3,4)).build());if(!entered)restorePip();}catch(Exception e){restorePip();toast("Could not open picture in picture.");}});}
  private void restorePip(){web.evaluateJavascript("document.body.classList.remove('native-pip');document.querySelectorAll('.native-pip-selected').forEach(e=>e.classList.remove('native-pip-selected'));",null);}
  @Override public void onPictureInPictureModeChanged(boolean enabled,Configuration config){super.onPictureInPictureModeChanged(enabled,config);if(!enabled)restorePip();}
- @Override protected void onUserLeaveHint(){super.onUserLeaveHint();if(activeMedia&&fullscreen==null)web.evaluateJavascript("!!document.querySelector('.participant.camera-active')",v->{if("true".equals(v))enterPip();});}
+ // Picture in picture is explicit: permission screens and app switching must not rearrange a live call.
+
  private void shareRoom(){web.evaluateJavascript("document.querySelector('#room-code')?.textContent||''",value->{try{String code=new org.json.JSONTokener(value).nextValue().toString();if(!code.matches("[A-Z2-9]{7,8}")){toast("Join or create a room first.");return;}Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");intent.putExtra(Intent.EXTRA_TEXT,"Watch with me on Xparty. Room code: "+code+"\n"+HOME);startActivity(Intent.createChooser(intent,"Invite to Xparty"));}catch(Exception ignored){}});}
  private void exitFullscreen(){if(fullscreen==null)return;root.removeView(fullscreen);fullscreen=null;web.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);if(fullscreenCallback!=null)fullscreenCallback.onCustomViewHidden();fullscreenCallback=null;}
  @Override public void onBackPressed(){if(fullscreen!=null){exitFullscreen();return;}if(isInPictureInPictureMode())return;web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){d.close();return 'handled';}const drawer=document.querySelector('#participants-drawer[open]');if(drawer){drawer.open=false;return 'handled';}return document.querySelector('#room:not([hidden])')?'room':'home';})()",value->{if(value.contains("handled"))return;if(value.contains("room")){new AlertDialog.Builder(this).setTitle("Leave room?").setMessage("You will leave this room and its call.").setNegativeButton("Stay",null).setPositiveButton("Leave",(d,w)->web.evaluateJavascript("document.querySelector('#room-exit')?.click()",null)).show();}else new AlertDialog.Builder(this).setTitle("Close Xparty?").setNegativeButton("Stay",null).setPositiveButton("Close",(d,w)->finish()).show();});}
  @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);Uri uri=intent.getData();if(uri!=null&&trusted(uri.toString()))web.loadUrl(uri.toString());}
  @Override protected void onSaveInstanceState(Bundle state){web.saveState(state);super.onSaveInstanceState(state);}
- @Override protected void onResume(){super.onResume();if(web!=null){web.onResume();web.evaluateJavascript("window.dispatchEvent(new Event('online'))",null);}}
+ @Override protected void onResume(){super.onResume();if(web!=null)web.onResume();}
  @Override protected void onDestroy(){alive=false;handler.removeCallbacksAndMessages(null);for(PermissionRequest request:new ArrayList<>(pendingPermissions))request.deny();pendingPermissions.clear();if(fileCallback!=null)fileCallback.onReceiveValue(null);if(web!=null){web.loadUrl("about:blank");web.destroy();}super.onDestroy();}
  private void toast(String text){Toast.makeText(this,text,Toast.LENGTH_LONG).show();}
  private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density);}
  private void hideError(){if(error!=null){root.removeView(error);error=null;}}
  private void showError(String text){hideError();error=new LinearLayout(this);error.setOrientation(LinearLayout.VERTICAL);error.setGravity(Gravity.CENTER);error.setPadding(dp(24),dp(24),dp(24),dp(24));error.setBackgroundColor(Color.rgb(14,17,26));TextView title=new TextView(this);title.setText("Xparty");title.setTextColor(Color.rgb(216,251,140));title.setTextSize(26);TextView message=new TextView(this);message.setText(text);message.setTextColor(Color.WHITE);message.setPadding(0,dp(20),0,dp(20));Button retry=new Button(this);retry.setText("Retry connection");retry.setOnClickListener(v->{hideError();web.reload();});error.addView(title);error.addView(message);error.addView(retry);root.addView(error,new FrameLayout.LayoutParams(-1,-1));}
-}  private void installAppExperience(){
-   String css="html,body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}"
-    +".xparty-native-ux button,.xparty-native-ux .icon-control,.xparty-native-ux .nav-button,.xparty-native-ux a[role=button]{min-width:48px!important;min-height:48px!important;border-radius:16px!important}"
-    +".xparty-native-ux button:active,.xparty-native-ux .icon-control:active{transform:scale(.94)!important}"
-    +".xparty-native-ux input,.xparty-native-ux textarea,.xparty-native-ux select{min-height:52px!important;font-size:16px!important;border-radius:16px!important}"
-    +".xparty-native-ux .topbar{padding:8px 12px!important;min-height:58px!important;background:#0e111af2!important;backdrop-filter:blur(20px)}"
-    +".xparty-native-ux .participant-strip{position:sticky;top:0;z-index:30;padding:8px 4px!important;background:#0e111ae8!important;backdrop-filter:blur(18px)}"
-    +".xparty-native-ux .conversation-tabs{position:sticky;top:58px;z-index:25;padding:5px!important;border-radius:18px!important;background:#151a25e8!important}"
-    +".xparty-native-ux .conversation-tabs button{min-height:46px!important;font-size:14px!important;font-weight:700!important}"
-    +".xparty-native-ux .call-panel,.xparty-native-ux .chat-panel{border-radius:24px!important}"
-    +".xparty-native-ux .call-panel{padding:10px!important}"
-    +".xparty-native-ux #chat-form{position:sticky;bottom:0;padding:8px!important;background:#151a25f2!important}"
-    +".xparty-native-ux #chat-form button[type=submit]{width:52px!important;height:52px!important}"
-    +".xparty-native-ux #message-input{height:52px!important}"
-    +".xparty-native-ux #participants .participant{border-radius:22px!important}"
-    +".xparty-native-ux #participants .local-controls .icon-control{width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;background:#10151dcc!important;border-radius:50%!important}"
-    +".xparty-native-ux .tile-pip{width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;border-radius:14px!important}"
-    +".xparty-native-ux #empty-player{border-radius:28px!important}"
-    +".xparty-native-ux #empty-player .source-pills button,.xparty-native-ux #empty-player .source-pills a{min-height:48px!important;padding:0 20px!important;font-size:15px!important}"
-    +".xparty-native-ux .player-bar{gap:6px!important;padding:8px 4px!important}.xparty-native-ux .player-bar .icon-control{width:48px!important;height:48px!important}"
-    +".xparty-native-ux .room-menu-content{position:fixed!important;left:10px!important;right:10px!important;bottom:10px!important;top:auto!important;width:auto!important;max-height:72dvh!important;border-radius:26px 26px 18px 18px!important;padding:16px!important}"
-    +".xparty-native-ux #toast{left:14px!important;right:14px!important;bottom:22px!important;max-width:none!important;border-radius:18px!important;padding:14px 16px!important;font-size:14px!important}"
-    +".xparty-native-ux .settings-dialog{width:calc(100vw - 20px)!important;max-height:88dvh!important;border-radius:28px!important}"
-    +"@media(max-width:760px){.xparty-native-ux #room{padding-left:8px!important;padding-right:8px!important}.xparty-native-ux .room-grid{gap:8px!important}.xparty-native-ux .participant-strip h2{font-size:13px!important}.xparty-native-ux .participant-strip .icon-control{width:44px!important;min-width:44px!important;height:44px!important}.xparty-native-ux #participants{--mobile-call-height:min(54dvh,430px)!important}.xparty-native-ux #participants.duo:not([data-active='0']) .participant:not(.self){height:var(--mobile-call-height)!important}.xparty-native-ux #participants.duo.self-large .participant.self{height:var(--mobile-call-height)!important}.xparty-native-ux .person-label{font-size:13px!important}.xparty-native-ux .cinema:not(.focus-call) #room .watch-stage{max-height:44dvh!important}.xparty-native-ux .cinema[data-conversation=both]:not(.focus-call) #room .chat-panel{height:32dvh!important}.xparty-native-ux #android-share{min-height:48px!important;display:flex!important;align-items:center!important;justify-content:center!important}}";
-   String js="(()=>{if(document.querySelector('#xparty-native-ux'))return;document.body.classList.add('xparty-native-ux');const s=document.createElement('style');s.id='xparty-native-ux';s.textContent="+org.json.JSONObject.quote(css)+";document.head.append(s);document.querySelectorAll('button').forEach(b=>b.setAttribute('data-native-touch','1'));})()";
-   web.evaluateJavascript(js,null);
-  }
 
+ // Chromium chooses communication mode while capturing the mic. Route physical
+ // volume keys to that stream instead of leaving them on media/ringer volume.
+ @Override public boolean onKeyDown(int keyCode,KeyEvent event){
+  if(keyCode==KeyEvent.KEYCODE_VOLUME_UP||keyCode==KeyEvent.KEYCODE_VOLUME_DOWN){
+   AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+   int mode=audio.getMode();
+   setVolumeControlStream(mode==AudioManager.MODE_IN_COMMUNICATION||mode==AudioManager.MODE_IN_CALL?AudioManager.STREAM_VOICE_CALL:AudioManager.STREAM_MUSIC);
+  }
+  return super.onKeyDown(keyCode,event);
+ }
+ private void installRenderingStability(){
+  // Keep the responsive site's dimensions. Only reduce costly compositing over
+  // live video; do not change media constraints, player clocks, or permissions.
+  String css=".android-app .topbar,.android-app .participant-strip,.android-app .person-label,.android-app .local-controls,.android-app .conversation-tabs{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
+   +".android-app .together-column>section:not([hidden]){animation:none!important}";
+  web.evaluateJavascript("(()=>{if(document.getElementById('android-stability'))return;const s=document.createElement('style');s.id='android-stability';s.textContent="+JSONObject.quote(css)+";document.head.append(s);})()",null);
+ }
+}
