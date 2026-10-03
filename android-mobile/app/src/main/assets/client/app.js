@@ -1,3 +1,4 @@
+import {mountAmbient} from './ambient.js';
 import {ask,privacySettings,roomAgreement,nicknameChoice,rememberedNickname} from './ui-support.js';
 import {icon} from './icons.js';
 import {preferences,t,localize,savePreferences,resetPreferences} from './settings.js';
@@ -802,3 +803,5 @@ setInterval(async()=>{
 
 // App skin follows inherited runtime styles as well as static stylesheets.
 const mobileSkin=document.querySelector('link[href="mobile.css"]');if(mobileSkin)document.head.append(mobileSkin);
+
+mountAmbient({video:filePlayer,getSource:()=>room?.source,isActive:()=>!!room&&!$('room').hidden});

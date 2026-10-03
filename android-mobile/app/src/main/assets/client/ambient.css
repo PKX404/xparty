@@ -1,0 +1,16 @@
+body.mobile-client { isolation:isolate; }
+#ambient-light {position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;contain:strict;}
+#ambient-light[hidden] {display:none!important;}
+#ambient-light i {position:absolute;width:90vmax;height:90vmax;border-radius:50%;opacity:.23;mask-image:radial-gradient(closest-side,#000,transparent);transition:background-color 1.6s ease;}
+#ambient-light i:nth-child(1) {left:-40vmax;top:-25vmax;}
+#ambient-light i:nth-child(2) {right:-45vmax;top:10vh;opacity:.16;}
+#ambient-light i:nth-child(3) {left:-15vmax;bottom:-65vmax;opacity:.18;}
+#ambient-light[data-motion=on] i:first-child {animation:ambient-drift 24s ease-in-out infinite alternate;}
+#ambient-light[data-mode=soft] i {opacity:.12;}
+@keyframes ambient-drift {to {transform:translate(6vw,5vh) scale(1.05);}}
+#ambient-settings {margin-top:16px;padding:14px;border:1px solid #ffffff18;border-radius:18px;}
+#ambient-settings summary {cursor:pointer;font-weight:600;}
+#ambient-settings .ambient-options {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+#ambient-settings .ambient-options button {min-width:0;min-height:44px;padding:8px;border:1px solid #ffffff20;border-radius:12px;background:#ffffff08;color:inherit;}
+#ambient-settings .ambient-options button[aria-pressed=true] {background:#d5e6b0;color:#151d12;border-color:#d5e6b0;}
+@media(prefers-reduced-motion:reduce){#ambient-light i{animation:none!important;transition:none!important;}}
