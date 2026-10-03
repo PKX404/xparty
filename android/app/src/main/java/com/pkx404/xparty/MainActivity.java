@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
+import android.media.AudioManager;
 import android.os.*;
 import android.util.Rational;
 import android.view.*;
@@ -25,11 +26,11 @@ public final class MainActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(14,17,26));setContentView(root);
   root.setOnApplyWindowInsetsListener((view,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
   web=new WebView(this);web.setBackgroundColor(Color.rgb(14,17,26));root.addView(web,new FrameLayout.LayoutParams(-1,-1));
-  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/1.1.2 NativeShell");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
+  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/1.1.3 NativeShell");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
   progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(100);FrameLayout.LayoutParams bar=new FrameLayout.LayoutParams(-1,dp(3),Gravity.TOP);root.addView(progress,bar);
   web.setWebViewClient(new WebViewClient(){
    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri u=request.getUrl();if(!request.isForMainFrame())return false;if("xparty-native".equals(u.getScheme())){if(trusted(view.getUrl())){if("pip".equals(u.getHost()))enterPip();else if("share".equals(u.getHost()))shareRoom();}return true;}if(trusted(u.toString()))return false;if("https".equals(u.getScheme())||"http".equals(u.getScheme())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception e){toast("No app can open this link.");}}return true;}
-   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();CookieManager.getInstance().flush();}}
+   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();installRenderingStability();CookieManager.getInstance().flush();}}
    @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError failure){if(request.isForMainFrame())showError("Unable to connect. Check your internet and retry. Free hosting may take a moment to wake up.");}
    @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()>=500)showError("The server is starting or temporarily unavailable. Retry in a moment.");}
   });
@@ -87,16 +88,35 @@ public final class MainActivity extends Activity {
  private void enterPip(){if(!getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)){toast("Picture in picture is unavailable on this device.");return;}web.evaluateJavascript("(()=>{const p=document.querySelector('.floating-participant.camera-active')||document.querySelector('.participant:not(.self).camera-active')||document.querySelector('.participant.self.camera-active');if(!p)return false;document.querySelectorAll('.native-pip-selected').forEach(e=>e.classList.remove('native-pip-selected'));p.classList.add('native-pip-selected');document.body.classList.add('native-pip');return true;})()",value->{if(!"true".equals(value)){toast("Turn on a camera to use Android picture in picture.");return;}try{boolean entered=enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(3,4)).build());if(!entered)restorePip();}catch(Exception e){restorePip();toast("Could not open picture in picture.");}});}
  private void restorePip(){web.evaluateJavascript("document.body.classList.remove('native-pip');document.querySelectorAll('.native-pip-selected').forEach(e=>e.classList.remove('native-pip-selected'));",null);}
  @Override public void onPictureInPictureModeChanged(boolean enabled,Configuration config){super.onPictureInPictureModeChanged(enabled,config);if(!enabled)restorePip();}
- @Override protected void onUserLeaveHint(){super.onUserLeaveHint();if(activeMedia&&fullscreen==null)web.evaluateJavascript("!!document.querySelector('.participant.camera-active')",v->{if("true".equals(v))enterPip();});}
+ // Picture in picture is explicit: permission screens and app switching must not rearrange a live call.
+
  private void shareRoom(){web.evaluateJavascript("document.querySelector('#room-code')?.textContent||''",value->{try{String code=new org.json.JSONTokener(value).nextValue().toString();if(!code.matches("[A-Z2-9]{7,8}")){toast("Join or create a room first.");return;}Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");intent.putExtra(Intent.EXTRA_TEXT,"Watch with me on Xparty. Room code: "+code+"\n"+HOME);startActivity(Intent.createChooser(intent,"Invite to Xparty"));}catch(Exception ignored){}});}
  private void exitFullscreen(){if(fullscreen==null)return;root.removeView(fullscreen);fullscreen=null;web.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);if(fullscreenCallback!=null)fullscreenCallback.onCustomViewHidden();fullscreenCallback=null;}
  @Override public void onBackPressed(){if(fullscreen!=null){exitFullscreen();return;}if(isInPictureInPictureMode())return;web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){d.close();return 'handled';}const drawer=document.querySelector('#participants-drawer[open]');if(drawer){drawer.open=false;return 'handled';}return document.querySelector('#room:not([hidden])')?'room':'home';})()",value->{if(value.contains("handled"))return;if(value.contains("room")){new AlertDialog.Builder(this).setTitle("Leave room?").setMessage("You will leave this room and its call.").setNegativeButton("Stay",null).setPositiveButton("Leave",(d,w)->web.evaluateJavascript("document.querySelector('#room-exit')?.click()",null)).show();}else new AlertDialog.Builder(this).setTitle("Close Xparty?").setNegativeButton("Stay",null).setPositiveButton("Close",(d,w)->finish()).show();});}
  @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);Uri uri=intent.getData();if(uri!=null&&trusted(uri.toString()))web.loadUrl(uri.toString());}
  @Override protected void onSaveInstanceState(Bundle state){web.saveState(state);super.onSaveInstanceState(state);}
- @Override protected void onResume(){super.onResume();if(web!=null){web.onResume();web.evaluateJavascript("window.dispatchEvent(new Event('online'))",null);}}
+ @Override protected void onResume(){super.onResume();if(web!=null)web.onResume();}
  @Override protected void onDestroy(){alive=false;handler.removeCallbacksAndMessages(null);for(PermissionRequest request:new ArrayList<>(pendingPermissions))request.deny();pendingPermissions.clear();if(fileCallback!=null)fileCallback.onReceiveValue(null);if(web!=null){web.loadUrl("about:blank");web.destroy();}super.onDestroy();}
  private void toast(String text){Toast.makeText(this,text,Toast.LENGTH_LONG).show();}
  private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density);}
  private void hideError(){if(error!=null){root.removeView(error);error=null;}}
  private void showError(String text){hideError();error=new LinearLayout(this);error.setOrientation(LinearLayout.VERTICAL);error.setGravity(Gravity.CENTER);error.setPadding(dp(24),dp(24),dp(24),dp(24));error.setBackgroundColor(Color.rgb(14,17,26));TextView title=new TextView(this);title.setText("Xparty");title.setTextColor(Color.rgb(216,251,140));title.setTextSize(26);TextView message=new TextView(this);message.setText(text);message.setTextColor(Color.WHITE);message.setPadding(0,dp(20),0,dp(20));Button retry=new Button(this);retry.setText("Retry connection");retry.setOnClickListener(v->{hideError();web.reload();});error.addView(title);error.addView(message);error.addView(retry);root.addView(error,new FrameLayout.LayoutParams(-1,-1));}
+
+ // Chromium chooses communication mode while capturing the mic. Route physical
+ // volume keys to that stream instead of leaving them on media/ringer volume.
+ @Override public boolean onKeyDown(int keyCode,KeyEvent event){
+  if(keyCode==KeyEvent.KEYCODE_VOLUME_UP||keyCode==KeyEvent.KEYCODE_VOLUME_DOWN){
+   AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+   int mode=audio.getMode();
+   setVolumeControlStream(mode==AudioManager.MODE_IN_COMMUNICATION||mode==AudioManager.MODE_IN_CALL?AudioManager.STREAM_VOICE_CALL:AudioManager.STREAM_MUSIC);
+  }
+  return super.onKeyDown(keyCode,event);
+ }
+ private void installRenderingStability(){
+  // Keep the responsive site's dimensions. Only reduce costly compositing over
+  // live video; do not change media constraints, player clocks, or permissions.
+  String css=".android-app .topbar,.android-app .participant-strip,.android-app .person-label,.android-app .local-controls,.android-app .conversation-tabs{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}"
+   +".android-app .together-column>section:not([hidden]){animation:none!important}";
+  web.evaluateJavascript("(()=>{if(document.getElementById('android-stability'))return;const s=document.createElement('style');s.id='android-stability';s.textContent="+JSONObject.quote(css)+";document.head.append(s);})()",null);
+ }
 }
