@@ -40,3 +40,8 @@ body.mobile-client{--app-surface:#111b22;--app-edge:#263a40;background:#071016;c
 body.mobile-client[data-mobile-screen=call] #room #participants.duo[data-count][data-active]{width:clamp(165px,calc((100dvh - 540px)*.75),330px)!important;max-width:100%!important}
 body.mobile-client[data-mobile-screen=call] #room #participants.duo[data-count][data-active] .participant:not(.self){height:clamp(220px,calc(100dvh - 540px),440px)!important;min-height:220px!important;max-height:none!important}
 body.mobile-client #room #participants.duo[data-count][data-active]:not([data-active="0"]) .participant.self{width:96px!important;height:128px!important;min-height:128px!important}
+
+/* Authentication release: scoped to the account sheet, never the watch room. */
+#google-login.google-primary{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;margin:4px 0 18px;background:#f5f7fa;color:#17202b;border:1px solid #d7dce2;border-radius:14px;font-weight:650}
+#google-login.google-primary::before{content:'G';font-size:21px;font-weight:800;color:#4285f4}
+#google-login:disabled{opacity:.55}

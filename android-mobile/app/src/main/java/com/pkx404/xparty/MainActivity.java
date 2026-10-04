@@ -26,12 +26,12 @@ public final class MainActivity extends Activity {
  @Override public void onCreate(Bundle state){super.onCreate(state);root=new FrameLayout(this);root.setBackgroundColor(Color.rgb(14,17,26));setContentView(root);
   root.setOnApplyWindowInsetsListener((view,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.ime());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
   web=new WebView(this);web.setBackgroundColor(Color.rgb(14,17,26));root.addView(web,new FrameLayout.LayoutParams(-1,-1));
-  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/2.1.0 MobileClient");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
+  WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setMediaPlaybackRequiresUserGesture(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setSupportMultipleWindows(false);settings.setBuiltInZoomControls(false);settings.setUserAgentString(settings.getUserAgentString()+" XpartyAndroid/2.1.1 MobileClient");CookieManager.getInstance().setAcceptCookie(true);CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
   progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(100);FrameLayout.LayoutParams bar=new FrameLayout.LayoutParams(-1,dp(3),Gravity.TOP);root.addView(progress,bar);
   web.setWebViewClient(new WebViewClient(){
    @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){return localClient(request);}
    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){Uri u=request.getUrl();if(!request.isForMainFrame())return false;if("xparty-native".equals(u.getScheme())){if(trusted(view.getUrl())){if("pip".equals(u.getHost()))enterPip();else if("share".equals(u.getHost()))shareRoom();else if("update".equals(u.getHost()))checkAppUpdate();}return true;}if(trusted(u.toString()))return false;if("https".equals(u.getScheme())||"http".equals(u.getScheme())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception e){toast("No app can open this link.");}}return true;}
-   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();installRenderingStability();CookieManager.getInstance().flush();}}
+   @Override public void onPageFinished(WebView view,String url){progress.setVisibility(View.GONE);if(trusted(url)){hideError();installNativeControls();installRenderingStability();connectAuthPort();CookieManager.getInstance().flush();}}
    @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError failure){if(request.isForMainFrame())showError("Unable to connect. Check your internet and retry. Free hosting may take a moment to wake up.");}
    @Override public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response){if(request.isForMainFrame()&&response.getStatusCode()>=500)showError("The server is starting or temporarily unavailable. Retry in a moment.");}
   });
@@ -43,7 +43,8 @@ public final class MainActivity extends Activity {
    @Override public void onShowCustomView(View view,CustomViewCallback callback){if(fullscreen!=null){callback.onCustomViewHidden();return;}fullscreen=view;fullscreenCallback=callback;root.addView(view,new FrameLayout.LayoutParams(-1,-1));web.setVisibility(View.GONE);getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN|WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
    @Override public void onHideCustomView(){exitFullscreen();}
   });
-  if(state==null||web.restoreState(state)==null){Uri incoming=getIntent().getData();web.loadUrl(incoming!=null&&trusted(incoming.toString())?incoming.toString():HOME);}handler.post(monitor);
+  Uri incoming=getIntent().getData();if(authCallback(incoming))pendingAuth=incoming.toString();
+  if(state==null||web.restoreState(state)==null){web.loadUrl(incoming!=null&&trusted(incoming.toString())?incoming.toString():HOME);}handler.post(monitor);
  }
  private String androidPermission(String resource){
   if(PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource))return Manifest.permission.RECORD_AUDIO;
@@ -94,10 +95,10 @@ public final class MainActivity extends Activity {
  private void shareRoom(){web.evaluateJavascript("document.querySelector('#room-code')?.textContent||''",value->{try{String code=new org.json.JSONTokener(value).nextValue().toString();if(!code.matches("[A-Z2-9]{7,8}")){toast("Join or create a room first.");return;}Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");intent.putExtra(Intent.EXTRA_TEXT,"Watch with me on Xparty. Room code: "+code+"\n"+HOME);startActivity(Intent.createChooser(intent,"Invite to Xparty"));}catch(Exception ignored){}});}
  private void exitFullscreen(){if(fullscreen==null)return;root.removeView(fullscreen);fullscreen=null;web.setVisibility(View.VISIBLE);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);if(fullscreenCallback!=null)fullscreenCallback.onCustomViewHidden();fullscreenCallback=null;}
  @Override public void onBackPressed(){if(fullscreen!=null){exitFullscreen();return;}if(isInPictureInPictureMode())return;web.evaluateJavascript("(()=>{const d=document.querySelector('dialog[open]');if(d){d.close();return 'handled';}const drawer=document.querySelector('#participants-drawer[open]');if(drawer){drawer.open=false;return 'handled';}return document.querySelector('#room:not([hidden])')?'room':'home';})()",value->{if(value.contains("handled"))return;if(value.contains("room")){new AlertDialog.Builder(this).setTitle("Leave room?").setMessage("You will leave this room and its call.").setNegativeButton("Stay",null).setPositiveButton("Leave",(d,w)->web.evaluateJavascript("document.querySelector('#room-exit')?.click()",null)).show();}else new AlertDialog.Builder(this).setTitle("Close Xparty?").setNegativeButton("Stay",null).setPositiveButton("Close",(d,w)->finish()).show();});}
- @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);Uri uri=intent.getData();if(uri!=null&&trusted(uri.toString()))web.loadUrl(uri.toString());}
+ @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);Uri uri=intent.getData();if(authCallback(uri)){pendingAuth=uri.toString();deliverAuth();}else if(uri!=null&&trusted(uri.toString()))web.loadUrl(uri.toString());}
  @Override protected void onSaveInstanceState(Bundle state){web.saveState(state);super.onSaveInstanceState(state);}
  @Override protected void onResume(){super.onResume();if(web!=null)web.onResume();}
- @Override protected void onDestroy(){alive=false;handler.removeCallbacksAndMessages(null);for(PermissionRequest request:new ArrayList<>(pendingPermissions))request.deny();pendingPermissions.clear();if(fileCallback!=null)fileCallback.onReceiveValue(null);if(web!=null){web.loadUrl("about:blank");web.destroy();}super.onDestroy();}
+ @Override protected void onDestroy(){alive=false;if(authPort!=null)authPort.close();handler.removeCallbacksAndMessages(null);for(PermissionRequest request:new ArrayList<>(pendingPermissions))request.deny();pendingPermissions.clear();if(fileCallback!=null)fileCallback.onReceiveValue(null);if(web!=null){web.loadUrl("about:blank");web.destroy();}super.onDestroy();}
  private void toast(String text){Toast.makeText(this,text,Toast.LENGTH_LONG).show();}
  private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density);}
  private void hideError(){if(error!=null){root.removeView(error);error=null;}}
@@ -132,6 +133,52 @@ public final class MainActivity extends Activity {
   String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".svg")?"image/svg+xml":"text/html";
   try{return new WebResourceResponse(mime,"UTF-8",getAssets().open("client/"+path));}catch(java.io.IOException missing){return null;}
  }
+ // A message port is delivered only to the trusted TOP frame; no all-frame JS interface.
+ private WebMessagePort authPort;private String pendingAuth;private boolean authConnected=false;
+ private boolean authCallback(Uri u){return u!=null&&"xparty".equals(u.getScheme())&&"login-callback".equals(u.getHost())&&(u.getPath()==null||u.getPath().isEmpty()||"/".equals(u.getPath()))&&u.getPort()==-1&&u.getUserInfo()==null;}
+ private javax.crypto.SecretKey authKey() throws Exception {
+  java.security.KeyStore ks=java.security.KeyStore.getInstance("AndroidKeyStore");ks.load(null);
+  if(!ks.containsAlias("xparty-auth-v1")){
+   javax.crypto.KeyGenerator gen=javax.crypto.KeyGenerator.getInstance("AES","AndroidKeyStore");
+   gen.init(new android.security.keystore.KeyGenParameterSpec.Builder("xparty-auth-v1",android.security.keystore.KeyProperties.PURPOSE_ENCRYPT|android.security.keystore.KeyProperties.PURPOSE_DECRYPT).setBlockModes("GCM").setEncryptionPaddings("NoPadding").build());gen.generateKey();
+  }
+  return (javax.crypto.SecretKey)ks.getKey("xparty-auth-v1",null);
+ }
+ private String authStore(String op,String key,String value) throws Exception {
+  if(!key.matches("sb-vgnzdvfrzervpirpirze-auth-token[a-zA-Z0-9_-]*|xparty-oauth-pending"))throw new Exception("Invalid storage key");
+  android.content.SharedPreferences prefs=getSharedPreferences("secure-auth",MODE_PRIVATE);
+  if("remove".equals(op)){if(!prefs.edit().remove(key).commit())throw new Exception("Storage unavailable");return null;}
+  javax.crypto.Cipher cipher=javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+  if("set".equals(op)){
+   if(value==null||value.length()>131072)throw new Exception("Invalid storage value");
+   cipher.init(javax.crypto.Cipher.ENCRYPT_MODE,authKey());cipher.updateAAD(key.getBytes("UTF-8"));
+   String encrypted=android.util.Base64.encodeToString(cipher.getIV(),2)+":"+android.util.Base64.encodeToString(cipher.doFinal(value.getBytes("UTF-8")),2);
+   if(!prefs.edit().putString(key,encrypted).commit())throw new Exception("Storage unavailable");return null;
+  }
+  String encrypted=prefs.getString(key,null);if(encrypted==null)return null;
+  String[] parts=encrypted.split(":",2);cipher.init(javax.crypto.Cipher.DECRYPT_MODE,authKey(),new javax.crypto.spec.GCMParameterSpec(128,android.util.Base64.decode(parts[0],2)));cipher.updateAAD(key.getBytes("UTF-8"));
+  return new String(cipher.doFinal(android.util.Base64.decode(parts[1],2)),"UTF-8");
+ }
+ private void deliverAuth(){if(authPort!=null&&authConnected&&pendingAuth!=null&&trusted(web.getUrl())){authPort.postMessage(new WebMessage("{\"event\":\"callback\",\"url\":"+JSONObject.quote(pendingAuth)+"}"));pendingAuth=null;getIntent().setData(null);}}
+ private void connectAuthPort(){
+  authConnected=false;if(authPort!=null)authPort.close();WebMessagePort[] ports=web.createWebMessageChannel();authPort=ports[0];
+  authPort.setWebMessageCallback(new WebMessagePort.WebMessageCallback(){@Override public void onMessage(WebMessagePort port,WebMessage message){
+   if(!trusted(web.getUrl())||port!=authPort)return;
+   JSONObject response=new JSONObject();
+   try{
+    JSONObject request=new JSONObject(message.getData());response.put("id",request.getInt("id"));String op=request.getString("op");
+    if("ready".equals(op)){authConnected=true;response.put("value",true);}
+    else if("open".equals(op)){
+     Uri u=Uri.parse(request.getString("url"));
+     if(!"https".equals(u.getScheme())||!"vgnzdvfrzervpirpirze.supabase.co".equals(u.getHost())||(u.getPort()!=-1&&u.getPort()!=443)||u.getUserInfo()!=null||!("/auth/v1/authorize".equals(u.getPath())||"/auth/v1/user/identities/authorize".equals(u.getPath()))||!"google".equals(u.getQueryParameter("provider"))||!"xparty://login-callback".equals(u.getQueryParameter("redirect_to")))throw new Exception("Unexpected sign-in address");
+     startActivity(new Intent(Intent.ACTION_VIEW,u));response.put("value",true);
+    }else if("get".equals(op)||"set".equals(op)||"remove".equals(op)){String result=authStore(op,request.getString("key"),request.optString("value",null));response.put("value",result==null?JSONObject.NULL:result);}
+    else throw new Exception("Unknown action");
+   }catch(Exception e){try{response.put("error","Could not complete secure sign-in action. Please retry.");}catch(Exception ignored){}}
+   port.postMessage(new WebMessage(response.toString()));deliverAuth();
+  }});
+  web.postWebMessage(new WebMessage("xparty-auth-port",new WebMessagePort[]{ports[1]}),Uri.parse(HOME));
+ }
  private boolean checkingUpdate=false;
  private void checkAppUpdate(){
   if(checkingUpdate)return;checkingUpdate=true;toast("Checking for an app update…");
@@ -147,7 +194,7 @@ public final class MainActivity extends Activity {
     int code=release.getInt("versionCode");String version=release.getString("versionName"),url=release.optString("apkUrl");
     Uri target=Uri.parse(url);
     boolean allowed="https".equals(target.getScheme())&&"raw.githubusercontent.com".equals(target.getHost())&&target.getPath()!=null&&target.getPath().startsWith("/PKX404/XPARTY/")&&target.getPath().endsWith(".apk");
-    runOnUiThread(()->{if(!alive||isFinishing())return;if(code<=22)toast("You have the latest published version: 2.1.0");else if(!allowed)toast("Update is not ready to download yet.");else new AlertDialog.Builder(this).setTitle("Xparty "+version+" is ready").setMessage("Download the signed update, then approve installation in Android. Your app data stays in place.").setNegativeButton("Later",null).setPositiveButton("Download update",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,target));}catch(Exception e){toast("No app can open the download.");}}).show();});
+    runOnUiThread(()->{if(!alive||isFinishing())return;if(code<=23)toast("You have the latest published version: 2.1.1");else if(!allowed)toast("Update is not ready to download yet.");else new AlertDialog.Builder(this).setTitle("Xparty "+version+" is ready").setMessage("Download the signed update, then approve installation in Android. Your app data stays in place.").setNegativeButton("Later",null).setPositiveButton("Download update",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,target));}catch(Exception e){toast("No app can open the download.");}}).show();});
    }catch(Exception e){runOnUiThread(()->{if(alive)toast("Could not check for updates. Try again when connected.");});}
    finally{runOnUiThread(()->checkingUpdate=false);}
   },"xparty-update").start();

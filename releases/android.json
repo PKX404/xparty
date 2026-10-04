@@ -1,5 +1,6 @@
 {
-  "versionCode": 22,
-  "versionName": "2.1.0",
-  "apkUrl": "https://raw.githubusercontent.com/PKX404/XPARTY/android-mobile/android-mobile/releases/Xparty-2.1.0.apk"
+  "versionCode": 23,
+  "versionName": "2.1.1",
+  "apkUrl": "https://raw.githubusercontent.com/PKX404/XPARTY/android-mobile/android-mobile/releases/Xparty-2.1.1.apk",
+  "sha256": "703d390796773d1da252505051d582d4e6e8d64208b8680fa67c38332913da0a"
 }

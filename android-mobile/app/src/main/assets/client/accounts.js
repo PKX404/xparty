@@ -10,9 +10,12 @@ function publicName(user){return user.user_metadata?.full_name?.slice(0,24)||'Fr
 async function init(){
  const config=await fetch(base+'/api/accounts/config',{signal:AbortSignal.timeout(12000)}).then(r=>{if(!r.ok)throw Error('Account service is unavailable. Guest rooms are still available.');return r.json();});
  if(!config.enabled){$('auth-form').hidden=false;for(const control of $('auth-form').querySelectorAll('input,select,button'))control.disabled=true;status('Account registration is not available yet. Continue as a guest to watch and call.');$('account-dialog').dataset.provider='unavailable';return;}
- const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.117.2');client=createClient(config.url,config.publicKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce'}});
+ const nativeAuth=window.XpartyNativeAuth;
+ if(nativeAuth){const key='sb-vgnzdvfrzervpirpirze-auth-token';for(const item of [key,key+'-code-verifier']){const old=localStorage.getItem(item);if(old&&!await nativeAuth.storage.getItem(item))await nativeAuth.storage.setItem(item,old);localStorage.removeItem(item);}}
+ const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2.117.2');client=createClient(config.url,config.publicKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:!nativeAuth,flowType:'pkce',...(nativeAuth?{storage:nativeAuth.storage}:{})}});
  authReady=true;$('account-dialog').dataset.provider='ready';$('auth-method').querySelector('[value=phone]').disabled=!config.phoneEnabled;
- client.auth.onAuthStateChange((_event,next)=>{session=next;if(next?.provider_token)sessionStorage.setItem('xparty-google-token',next.provider_token);setTimeout(()=>run(refreshProfile),0);});session=check(await client.auth.getSession()).session;await refreshProfile();
+ client.auth.onAuthStateChange((_event,next)=>{session=next;if(next?.provider_token&&next.user?.app_metadata?.provider==='google')sessionStorage.setItem('xparty-google-token',next.provider_token);setTimeout(()=>run(refreshProfile),0);});session=check(await client.auth.getSession()).session;await refreshProfile();
+ if(nativeAuth)nativeAuth.onCallback(url=>run(()=>completeGoogle(url)));
  setInterval(()=>run(poll),2500);
 }
 async function refreshProfile(){
@@ -27,7 +30,32 @@ async function signal(payload){const recipient=call.caller===session.user.id?cal
 async function makePeer(){if(pc)return;stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:{width:360,height:480,frameRate:15}});$('friend-self').srcObject=stream;pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});for(const track of stream.getTracks())pc.addTrack(track,stream);pc.onicecandidate=e=>{if(e.candidate)run(()=>signal({candidate:e.candidate.toJSON()}));};pc.ontrack=e=>{$('friend-remote').srcObject=e.streams[0];$('friend-remote').play().catch(()=>{$('friend-call-status').textContent='Tap the remote video to enable call audio.';});};pc.onconnectionstatechange=()=>{$('friend-call-status').textContent=pc?.connectionState||'Call ended';};}
 async function readSignals(){if(signalBusy||!call||!pc)return;signalBusy=true;try{const rows=check(await client.from('xparty_signals').select('*').eq('call_id',call.id).eq('recipient',session.user.id).gt('id',signalAfter).order('id'));for(const row of rows){const m=row.payload;if(m.description){await pc.setRemoteDescription(m.description);for(const candidate of pendingIce)await pc.addIceCandidate(candidate);pendingIce=[];if(m.description.type==='offer'){await pc.setLocalDescription(await pc.createAnswer());await signal({description:pc.localDescription});}}else if(m.candidate){if(pc.remoteDescription)await pc.addIceCandidate(m.candidate);else pendingIce.push(m.candidate);}signalAfter=row.id;}}finally{signalBusy=false;}}
 async function endCall(notify=true){const current=call;call=null;pc?.close();pc=null;stream?.getTracks().forEach(t=>t.stop());stream=null;signalAfter=0;pendingIce=[];$('friend-self').srcObject=null;$('friend-remote').srcObject=null;$('friend-call-dialog').close();if(notify&&current)check(await client.from('xparty_calls').update({status:'ended'}).eq('id',current.id));}
-async function google(scopes='openid email profile'){if(!session&&!$('privacy-consent').checked)throw Error('Confirm that you are 18 or older and have read the privacy notice.');const options={scopes,redirectTo:location.origin+location.pathname,queryParams:{prompt:'consent'}};check(session?await client.auth.linkIdentity({provider:'google',options}):await client.auth.signInWithOAuth({provider:'google',options}));}
+let googleBusy=false;
+async function completeGoogle(value){
+ const native=window.XpartyNativeAuth;if(!native)return;
+ const marker=Number(await native.storage.getItem('xparty-oauth-pending'));
+ if(!marker||Date.now()-marker>15*60*1000)throw Error('This sign-in has expired. Tap Continue with Google again.');
+ const url=new URL(value);if(url.protocol!=='xparty:'||url.hostname!=='login-callback')throw Error('Unexpected sign-in callback.');
+ if(url.searchParams.has('error')){await native.storage.removeItem('xparty-oauth-pending');throw Error('Google sign-in was cancelled or denied. You can retry or continue as a guest.');}
+ const code=url.searchParams.get('code');if(!code)throw Error('No sign-in code was returned. Please try again.');
+ status('Finishing Google sign-in…');
+ const data=check(await client.auth.exchangeCodeForSession(code));session=data.session;
+ await native.storage.removeItem('xparty-oauth-pending');
+ if(session?.provider_token)sessionStorage.setItem('xparty-google-token',session.provider_token);
+ await refreshProfile();
+}
+async function google(scopes='openid email profile'){
+ if(!authReady)throw Error('Account service is still connecting. Please try again shortly.');
+ if(!session&&!$('privacy-consent').checked)throw Error('Confirm that you are 18 or older and have read the privacy notice.');
+ if(googleBusy)return;if(!navigator.onLine)throw Error('Connect to the internet to sign in with Google.');
+ googleBusy=true;$('google-login').disabled=true;
+ try{
+  const native=window.XpartyNativeAuth;
+  const options={scopes,redirectTo:native?'xparty://login-callback':location.origin+location.pathname,skipBrowserRedirect:!!native,queryParams:{prompt:scopes==='openid email profile'?'select_account':'consent'}};
+  const data=check(session?await client.auth.linkIdentity({provider:'google',options}):await client.auth.signInWithOAuth({provider:'google',options}));
+  if(native){await native.storage.setItem('xparty-oauth-pending',String(Date.now()));await native.open(data.url);status('Complete Google sign-in in your browser. If you cancel, return here and retry or continue as a guest.');}
+ }finally{googleBusy=false;$('google-login').disabled=false;}
+}
 async function googleFetch(url){const token=sessionStorage.getItem('xparty-google-token');if(!token)throw Error('Connect Google to allow access to your playlists and Drive.');const r=await fetch(url,{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw Error('Google access expired or permission is missing. Reconnect Google.');return r;}
 async function libraries(){const token=sessionStorage.getItem('xparty-google-token');if(!token)return google('openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/drive.readonly');const box=$('google-results');box.replaceChildren();box.append(button('Reconnect Google permissions',()=>google('openid email profile https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/drive.readonly')));const playlists=await(await googleFetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50')).json();for(const list of playlists.items||[])box.append(button('Playlist: '+list.snippet.title,async()=>{const result=await(await googleFetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId='+encodeURIComponent(list.id))).json();for(const item of result.items||[])if(item.snippet.resourceId?.videoId)window.dispatchEvent(new CustomEvent('xparty:queue',{detail:{videoId:item.snippet.resourceId.videoId,title:item.snippet.title}}));status('Added the first 50 playlist items to your current room, up to its queue limit.');}));const files=await(await googleFetch('https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({q:"mimeType contains 'video/' and trashed=false",pageSize:'50',fields:'files(id,name,mimeType,size)'}))).json();for(const file of files.files||[])box.append(button('Share Drive video: '+file.name,async()=>{if(!window.XPARTY_SESSION_STATE?.().isHost)throw Error('Create a room as host before sharing a Drive video.');if(Number(file.size)>250*1024*1024)throw Error('This file exceeds the 250 MB room limit.');if(!await window.XPARTY_ASK('Share this Drive video with everyone in your current room? It will be temporarily uploaded to the room server.'))return;const response=await googleFetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(file.id)+'?alt=media');const blob=await response.blob();window.dispatchEvent(new CustomEvent('xparty:share-file',{detail:new File([blob],file.name,{type:file.mimeType})}));}));}
 for(const id of ['open-profile','open-friends'])$(id).onclick=()=>{$('account-dialog').showModal();};
@@ -46,7 +74,7 @@ $('google-login').onclick=()=>run(()=>google());$('google-library').onclick=()=>
 $('save-profile').onclick=()=>run(async()=>{const age=$('profile-age').value?Number($('profile-age').value):null;if(age!==null&&(!Number.isInteger(age)||age<18||age>120))throw Error('Age must be between 18 and 120, or leave it blank.');if(!$('profile-name').value.trim())throw Error('Enter a display name.');check(await client.from('xparty_profiles').update({display_name:$('profile-name').value.trim(),photo_data:photoData}).eq('id',session.user.id));check(await client.from('xparty_private_profiles').upsert({id:session.user.id,age}));status('Profile saved.');});
 $('add-friend').onclick=()=>run(async()=>{const id=$('friend-id').value.trim();if(!/^[0-9a-f-]{36}$/i.test(id))throw Error('Paste the complete friend ID.');check(await client.from('xparty_friends').insert({requester:session.user.id,addressee:id}));await loadFriends();});
 $('direct-form').onsubmit=e=>{e.preventDefault();run(async()=>{const body=$('direct-input').value.trim();if(!body)return;check(await client.from('xparty_messages').insert({sender:session.user.id,recipient:friend.id,body}));$('direct-input').value='';await loadMessages();});};
-$('sign-out').onclick=()=>run(async()=>{await endCall();check(await client.auth.signOut());sessionStorage.removeItem('xparty-google-token');friend=null;$('direct-chat').hidden=true;});
+$('sign-out').onclick=()=>run(async()=>{await endCall();check(await client.auth.signOut());if(window.XpartyNativeAuth)await window.XpartyNativeAuth.storage.removeItem('xparty-oauth-pending');sessionStorage.removeItem('xparty-google-token');friend=null;$('direct-chat').hidden=true;});
 $('direct-call').onclick=()=>run(async()=>{if(window.XPARTY_SESSION_STATE?.().inRoom)throw Error('Exit your watch room before starting a private call.');if(call)throw Error('End the current call first.');call=check(await client.from('xparty_calls').insert({caller:session.user.id,callee:friend.id}).select().single());$('friend-answer').hidden=true;$('friend-call-status').textContent='Calling '+friend.name+'…';$('friend-call-dialog').showModal();});
 $('friend-answer').onclick=()=>run(async()=>{await makePeer();check(await client.from('xparty_calls').update({status:'accepted'}).eq('id',call.id));$('friend-answer').hidden=true;});$('friend-hangup').onclick=()=>run(()=>endCall());$('friend-remote').onclick=()=>$('friend-remote').play();
 $('friend-call-dialog').addEventListener('cancel',e=>{e.preventDefault();run(()=>endCall());});$('friend-call-dialog .close-dialog')?.addEventListener('click',()=>run(()=>endCall()));
@@ -79,3 +107,7 @@ function setAuthMode(mode){authMode=mode==='signup'?'signup':'signin';$('account
 window.addEventListener('xparty:auth-mode',e=>setAuthMode(e.detail));
 $('auth-method').addEventListener('change',()=>{const phone=$('auth-method').value==='phone';$('auth-address').type=phone?'tel':'email';$('auth-address').placeholder=phone?'+91 98765 43210':'you@example.com';$('otp-step').hidden=true;otpAddress=null;});
 $('auth-address').type='email';$('auth-address').placeholder='you@example.com';$('account-status').setAttribute('role','status');setAuthMode('signin');
+
+// Keep Google prominent while retaining email OTP and guest access.
+$('auth-form').prepend($('google-login'));
+$('google-login').classList.add('google-primary');
