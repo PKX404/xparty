@@ -1,3 +1,4 @@
+import {validProviderId,publicVideoURL} from './public/xparty/providers.js';
 import {randomUUID} from 'node:crypto';
 export const MODES=['HOST_APPROVAL','HOST_ONLY','SHARED_CONTROL'];
 export const PENDING=['REQUEST_CREATED','QUEUE_PENDING','HOST_REVIEW'];
@@ -16,7 +17,7 @@ export function createPartyControl({online,send,state,execute,now=Date.now,reque
   finish(r,q,'EXECUTED','Approved action dispatched.');
  }
  function request(r,p,action){if((r.mode||'HOST_APPROVAL')==='HOST_ONLY'){send(p.ws,{type:'error',message:'Host Only mode: playback is controlled by the host.'});return;}
-  if(action.type==='source'&&(action.source?.type!=='youtube'||!/^[-\w]{11}$/.test(action.source.videoId))){send(p.ws,{type:'error',message:'Guests can request a YouTube video. Local files must be shared by the host.'});return;}
+  if(action.type==='source'&&(!validProviderId(action.source?.type,action.source?.videoId)&&!(action.source?.type==='direct'&&publicVideoURL(action.source.url)))){send(p.ws,{type:'error',message:'Choose a supported video link. Local files must be shared by the host.'});return;}
   if(action.type==='party-mode'&&!MODES.includes(action.mode))return;
   r.requests??=[];const fingerprint=JSON.stringify(action);const duplicate=r.requests.find(q=>q.by===p.id&&PENDING.includes(q.status)&&JSON.stringify(q.action)===fingerprint);if(duplicate){notify(r,duplicate);return;}
   if(r.requests.filter(q=>q.by===p.id&&now()-q.createdAt<10000).length>=3||r.requests.filter(q=>PENDING.includes(q.status)).length>=30){send(p.ws,{type:'error',message:'Please wait before sending another request.'});return;}
@@ -37,7 +38,7 @@ export function createPartyControl({online,send,state,execute,now=Date.now,reque
   if(!host&&m.type==='playback'&&(m.intent==='stop'||r.mode!=='SHARED_CONTROL')){send(p.ws,{type:'error',message:'Host controls the room timeline. Pause locally and Play to rejoin.'});return true;}
   if(host){if(m.type==='playback'&&r.mode==='SHARED_CONTROL'){r.controller={id:p.id,until:now()+lockMs};state(r);}return false;}
   if(r.mode==='SHARED_CONTROL'&&m.type==='playback'&&Math.abs(m.position-position(r))<=60){if(!r.controller||r.controller.id===p.id){r.controller={id:p.id,until:now()+lockMs};state(r);return false;}send(p.ws,{type:'error',message:'Another participant has control for up to 10 seconds. Request control from the key menu.'});return true;}
-  const action={type:m.type};for(const key of ['sourceId','position','playing','intent','source','videoId','title','id'])if(m[key]!==undefined)action[key]=m[key];request(r,p,action);return true;
+  const action={type:m.type};for(const key of ['sourceId','position','playing','intent','source','provider','url','videoId','title','id'])if(m[key]!==undefined)action[key]=m[key];request(r,p,action);return true;
  }
  return {handle,sweep,cancel};
 }
