@@ -1,5 +1,6 @@
--- Apply after schema.sql in the configured Supabase project.
--- Additive and safe to rerun. No auth or provider secrets belong in this file.
+-- Inspect the existing project schema and migration history before applying.
+-- Do not rerun the bootstrap schema over an installed account schema.
+-- No auth or provider secrets belong in this file.
 alter table public.xparty_profiles add column if not exists bio text not null default '' check(length(bio)<=240);
 alter table public.xparty_profiles add column if not exists interests text[] not null default '{}' check(cardinality(interests)<=8 and octet_length(interests::text)<=2048);
 alter table public.xparty_profiles add column if not exists likes text[] not null default '{}' check(cardinality(likes)<=8 and octet_length(likes::text)<=2048);

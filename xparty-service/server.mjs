@@ -1,3 +1,4 @@
+import {createAccountAuth} from './account-auth.mjs';
 import {tickTogether,togetherView} from './together.mjs';
 import {validProviderId,publicVideoURL} from './public/xparty/providers.js';
 import {profileData} from './public/xparty/profile-data.js';
@@ -29,6 +30,7 @@ export function createXparty(options={}) {
  const graceMs=options.graceMs??120000;
  const rooms=new Map(),clients=new Map(),buckets=new Map(),files=new Map(),searchCache=new Map();let storage=0;
  const publicAuthKey=(()=>{const key=process.env.SUPABASE_ANON_KEY||'';if(key.startsWith('sb_publishable_'))return key;try{if(JSON.parse(Buffer.from(key.split('.')[1],'base64url')).role==='anon')return key;}catch{}return null;})();
+ const accountAuth=createAccountAuth({url:process.env.SUPABASE_URL,publicKey:publicAuthKey,fetcher:options.accountFetch});
  const statePath=options.statePath??process.env.STATE_PATH;let saveTimer;
  const allowed=new Set((process.env.ALLOWED_ORIGINS||'https://pkx404.github.io,http://localhost:8787,http://127.0.0.1:8787').split(',').map(x=>x.trim()));
  if(process.env.RENDER_EXTERNAL_URL)allowed.add(process.env.RENDER_EXTERNAL_URL);
@@ -75,7 +77,15 @@ export function createXparty(options={}) {
   if(await owner.handle(req,res,url,json,ip(req)))return;
   if(url.pathname==='/health')return json(200,{ok:true,service:'Xparty',version:'0.10.0'});
   if(url.pathname==='/api/rooms/public'){if(req.method!=='GET')return json(405,{error:'Method not allowed'});if(!rate('directory:'+ip(req),60,60000))return json(429,{error:'Please wait before refreshing.'});return json(200,{rooms:publicRooms(rooms,{online,occupied,query:url.searchParams.get('q')||''})});}
-  if(url.pathname==='/api/accounts/config')return json(200,{enabled:!!(process.env.SUPABASE_URL&&publicAuthKey),url:publicAuthKey?process.env.SUPABASE_URL||null:null,publicKey:publicAuthKey,phoneEnabled:process.env.SUPABASE_PHONE_ENABLED==='true'});
+  if(url.pathname==='/api/accounts/config')return json(200,{enabled:accountAuth.enabled,url:publicAuthKey?process.env.SUPABASE_URL||null:null,publicKey:publicAuthKey,phoneEnabled:process.env.SUPABASE_PHONE_ENABLED==='true'});
+  if(url.pathname==='/api/accounts/me'){
+   res.setHeader('Cache-Control','no-store');res.setHeader('Vary',req.headers.origin?'Origin, Authorization':'Authorization');
+   if(req.method!=='GET')return json(405,{error:'Method not allowed'});
+   if(req.headers.origin&&!originOK(req))return json(403,{error:'Origin not allowed'});
+   if(!rate('account-auth:'+ip(req),60,60000))return json(429,{error:'Please wait before retrying sign-in.'});
+   const identity=await accountAuth.verify(req.headers.authorization);
+   return json(identity.status,identity.user?{user:identity.user}:{error:identity.error});
+  }
   if(url.pathname==='/api/room-status'&&req.method==='GET'){
    if(req.headers.origin&&!originOK(req))return json(403,{error:'Origin not allowed'});
    if(!rate('lookup:'+ip(req),30,60000))return json(429,{status:'limited'});
@@ -111,7 +121,7 @@ export function createXparty(options={}) {
   if(req.method!=='GET')return json(405,{error:'Method not allowed'});
   let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return json(400,{error:'Invalid URL'});}
   // Serve the application at the short root URL, retaining old /xparty/ links.
-  if(pathname==='/owner'||pathname==='/owner/')pathname='/xparty/owner.html';else if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|queue-policy.js|discovery.js|discovery.css|ambient.js|ambient.css|immersive.js|providers.js|profile-data.js|member-profiles.js|redesign.css|skip-voting.js|skip-voting.css|subtitles.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
+  if(pathname==='/owner'||pathname==='/owner/')pathname='/xparty/owner.html';else if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|queue-policy.js|discovery.js|discovery.css|ambient.js|ambient.css|immersive.js|providers.js|profile-data.js|member-profiles.js|account-gate.js|redesign.css|skip-voting.js|skip-voting.css|subtitles.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
   if(pathname.endsWith('/'))pathname+='index.html';const path=resolve(ROOT,'.'+pathname);const within=relative(ROOT,path);if(within==='..'||within.startsWith('..'+sep)||isAbsolute(within))return json(403,{error:'Forbidden'});
   try{const data=await readFile(path);res.writeHead(200,{'Content-Type':({'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml','.json':'application/json'})[extname(path)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data);}catch{return json(404,{error:'Not found'});}
  });
