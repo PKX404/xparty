@@ -1,0 +1,15 @@
+﻿/* Restrained color sits behind opaque chat text and controls. */
+.chat-panel{isolation:isolate;position:relative}
+.ambient-chat-layer{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;overflow:hidden;opacity:0;background:radial-gradient(ellipse at 10% 20%,var(--ambient-0,#2f4257),transparent 65%),radial-gradient(ellipse at 90% 70%,var(--ambient-2,#433851),transparent 65%),var(--ambient-1,#23383d);transition:background 1s,opacity .6s}
+.ambient-chat-on .ambient-chat-layer{opacity:.28}
+.ambient-chat-layer:after{content:'';position:absolute;inset:-25%;background:radial-gradient(ellipse at 30% 30%,var(--ambient-2,#433851),transparent 60%);opacity:.5}
+.ambient-chat-moving .ambient-chat-layer:after{animation:ambient-chat-drift 14s ease-in-out infinite alternate}
+.ambient-chat-on .message{background-color:color-mix(in srgb,var(--panel,#10191f) 92%,transparent)}
+.ambient-chat-on #chat-form,.ambient-chat-on .panel-title{background-color:color-mix(in srgb,var(--panel,#10191f) 94%,transparent)}
+.ambient-chat-toggle{font-size:10px!important;min-height:24px!important;padding:3px 7px!important;margin-left:8px}
+.ambient-chat-toggle[aria-pressed=true]{border-color:var(--lime,#cfed94)}
+.chat-panel .panel-title{flex-wrap:wrap;row-gap:4px}
+@keyframes ambient-chat-drift{from{transform:translate(-8%,-5%) rotate(-8deg)}to{transform:translate(8%,7%) rotate(8deg)}}
+@media(prefers-reduced-motion:reduce){.ambient-chat-layer{transition:none}.ambient-chat-layer:after{animation:none!important}}
+
+.ambient-chat-note{position:relative;margin:0;padding:4px 10px;font-size:10px;line-height:1.4;background:#10191ff2;color:var(--muted,#c1c7cb)}
