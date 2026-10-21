@@ -10,7 +10,7 @@ This document separates the implemented release from the master prompt's propose
 | Host Only | Denied, no playback request | Denied | Immediate control |
 | Shared Control | One controller, renewable 10-second lease | Host approval for source changes and seeks over 60 seconds | Immediate override |
 
-The host switches modes from the key menu at any time. Mode or content changes cancel stale pending requests. Guests retain chat and local volume. Queue entries are FIFO; voting is removed. Host-only guest behavior follows the master prompt where it differs from Party control.txt. No intro-skipping UI is invented without timestamp metadata.
+The host switches modes from the key menu at any time. Mode or content changes cancel stale pending requests. Guests retain chat and local volume. Queue entries support playlist order or most-votes-first ordering (see the queue policy update below). Host-only guest behavior follows the master prompt where it differs from Party control.txt. No intro-skipping UI is invented without timestamp metadata.
 
 Requests expire after 30 seconds. Hosts choose manual review, auto approve or auto reject, with selective auto approval for resync and pause. The UI prioritizes sync, playback, content, then mode requests. This is a review ordering, not a promise that a lower-priority request cannot be selected manually. Automatic decisions execute immediately. Source/revision checks prevent stale seeks. Duplicate event IDs and duplicate pending actions are ignored; requests and playback events are rate limited. These safeguards are process-local, not distributed exactly-once guarantees.
 
@@ -106,3 +106,18 @@ Privacy choices are an in-app essential/optional storage control; no analytics s
 ## 0.7 policy update (supersedes the host-mode playback rows above)
 
 The latest owner instruction changes guest playback in HOST_APPROVAL and HOST_ONLY: Pause is device-local; Play resumes at the authoritative host position. Stop and seeks are host-only in these modes. Shared mode retains its ten-second controller lease, but an explicit Stop command is always host-only. Content/mode requests still use the approval engine. Guest local pause sends no shared playback command. Buffer recovery retains correction thresholds, but ordinary playback-status messages no longer force correction absent a new revision or explicit resync.
+
+
+## Queue policy update
+
+Queue order and automatic advance are independent host settings. Playlist order permits host move-up/move-down controls; most-votes-first shows the exact server selection order, breaking vote ties by creation time and then item ID. Every participant may toggle one vote per item. Guests retain the existing content request workflow.
+
+Auto advance defaults on for compatibility. Turning it off leaves the finished video selected; manual Play next remains available. New completion commands include the current source ID so a delayed completion cannot skip a newly selected video. The legacy autoplay message and snapshot field retain their original FIFO (true) versus votes (false) meaning, while new clients use queueOrder and autoAdvance.
+
+Queue policy and move commands are host-only, validate input, and ignore invalid moves or moves in vote order. Pure policy tests cover permissions, deterministic ordering, compatibility, and stale-source/disabled automatic transitions.
+
+## Ambient room chat
+
+The local Ambient toggle adds a subdued color backdrop while a room video plays. Local files can supply real frame colors through a 12-by-8 canvas sampled at no more than four frames per second. YouTube's cross-origin iframe cannot provide live pixels: its backdrop uses colors from the public video thumbnail and gently animates those colors. If thumbnail CORS or canvas access fails, a neutral palette remains; playback is unaffected.
+
+Sampling pauses with playback, hidden chat, or a hidden document. Reduced-motion preferences keep a static palette. Leaving a room clears the source and backdrop. The off preference is saved only in this browser as xparty.ambient-chat; it changes no other participant's screen. Message and form surfaces remain dark for legibility. This implementation never records or uploads frame pixels.
