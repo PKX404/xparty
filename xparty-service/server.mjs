@@ -1,6 +1,8 @@
+import {handleCompanionDownload,normalizeCompanionSource} from './companion.mjs';
+import {isCompanion} from './public/xparty/companion-providers.js';
 import {createAccountAuth} from './account-auth.mjs';
 import {tickTogether,togetherView} from './together.mjs';
-import {validProviderId,publicVideoURL} from './public/xparty/providers.js';
+import {validProviderId,publicVideoURL,isEmbedded,isLiveSource} from './public/xparty/providers.js';
 import {profileData} from './public/xparty/profile-data.js';
 import {queueOrder,configureQueue,nextQueued} from './public/xparty/queue-policy.js';
 import {createOwnerControl} from './owner-control.mjs';
@@ -50,10 +52,10 @@ export function createXparty(options={}) {
  function ice(id){const out=[{urls:'stun:stun.l.google.com:19302'}];if(process.env.TURN_URLS&&process.env.TURN_SECRET){const username=`${Math.floor(Date.now()/1000)+86400}:${id}`;out.push({urls:process.env.TURN_URLS.split(','),username,credential:createHmac('sha1',process.env.TURN_SECRET).update(username).digest('base64')});}if(process.env.ICE_SERVERS_JSON)out.push(...JSON.parse(process.env.ICE_SERVERS_JSON));return out;}
  function welcome(p,r){const iceServers=ice(p.id);send(p.ws,{type:'welcome',id:p.id,token:p.token,room:snapshot(r),friendRequests:social.view(r,p),history:(r.history||[]).filter(m=>!m.to||m.from===p.id||m.to===p.id),iceServers,hasRelay:iceServers.some(s=>[s.urls].flat().some(u=>/^turns?:/.test(u))),searchEnabled:true});}
  function dropFile(id){const f=files.get(id);if(f){files.delete(id);storage-=f.size;rm(f.dir,{recursive:true,force:true}).catch(()=>{});}}
- function choose(r,p,s){if(!s||!['youtube','vimeo','direct','file'].includes(s.type))return false;if(['youtube','vimeo'].includes(s.type)&&!validProviderId(s.type,s.videoId))return false;if(s.type==='direct'&&!publicVideoURL(s.url))return false;if(s.type==='file'&&(!finite(s.size,MAX_FILE)||!s.size||!/^video\//.test(s.mime)))return false;
+ function choose(r,p,s){if(!s||!['youtube','vimeo','twitch','soundcloud','netflix','prime','direct','file'].includes(s.type))return false;if(isCompanion(s)&&!normalizeCompanionSource(s))return false;if(isEmbedded(s)&&!validProviderId(s.type,s.videoId))return false;if(s.type==='direct'&&!publicVideoURL(s.url))return false;if(s.type==='file'&&(!finite(s.size,MAX_FILE)||!s.size||!/^video\//.test(s.mime)))return false;
   if(s.type==='file'&&storage+s.size>MAX_STORAGE){send(p.ws,{type:'error',message:'Temporary video storage is busy. Try a smaller file or YouTube.'});return false;}
   if(r.source?.type==='file')dropFile(r.source.id);
-  r.source={type:s.type,id:randomUUID(),title:clean(s.title,150)||'YouTube video',owner:p.id,...(['youtube','vimeo'].includes(s.type)?{videoId:s.videoId}:s.type==='direct'?{url:publicVideoURL(s.url)}:{size:s.size,mime:clean(s.mime,80),uploaded:false})};
+  r.source={type:s.type,id:randomUUID(),title:clean(s.title,150)||'YouTube video',owner:p.id,...(isCompanion(s)?{videoId:normalizeCompanionSource(s).videoId,url:normalizeCompanionSource(s).url}:isEmbedded(s)?{videoId:s.videoId}:s.type==='direct'?{url:publicVideoURL(s.url)}:{size:s.size,mime:clean(s.mime,80),uploaded:false})};
   resetSkipVotes(r);
   if(s.type==='file'){storage+=s.size;files.set(r.source.id,{id:r.source.id,size:s.size,offset:0,busy:false,dir:null,path:null,code:r.code});}
   r.playback={position:0,playing:false,updatedAt:Date.now(),revision:r.playback.revision+1};for(const x of r.people.values()){x.ready=false;x.buffering=false;x.loadStatus=s.type==='file'?'Waiting for upload':'Loading';}state(r);return true;
@@ -65,7 +67,7 @@ export function createXparty(options={}) {
   state(r);
  }
  function occupied(r,except=null){return [...r.people.values()].filter(x=>x.id!==except&&(online(x)||(!x.left&&x.reservedUntil>Date.now()))).length;}
- function syncBuffering(r){if(!['youtube','vimeo','direct'].includes(r.source?.type))return;const waiting=r.bufferTogether===false?[]:[...r.people.values()].filter(x=>online(x)&&x.buffering&&Date.now()-(x.bufferingAt||0)<(options.bufferingLeaseMs??15000)).map(x=>x.id);const old=r.playback.waitingFor||[];if(JSON.stringify(old)===JSON.stringify(waiting))return;const p=r.playback;const position=p.position+(p.playing&&!old.length?Math.max(0,Date.now()-p.updatedAt)/1000:0);r.playback={...p,position,updatedAt:Date.now(),waitingFor:waiting};broadcast(r,{type:'playback',sourceId:r.source.id,playback:r.playback,serverTime:Date.now()});}
+ function syncBuffering(r){if(!(isEmbedded(r.source)||r.source?.type==='direct')||isLiveSource(r.source))return;const waiting=r.bufferTogether===false?[]:[...r.people.values()].filter(x=>online(x)&&x.buffering&&Date.now()-(x.bufferingAt||0)<(options.bufferingLeaseMs??15000)).map(x=>x.id);const old=r.playback.waitingFor||[];if(JSON.stringify(old)===JSON.stringify(waiting))return;const p=r.playback;const position=p.position+(p.playing&&!old.length?Math.max(0,Date.now()-p.updatedAt)/1000:0);r.playback={...p,position,updatedAt:Date.now(),waitingFor:waiting};broadcast(r,{type:'playback',sourceId:r.source.id,playback:r.playback,serverTime:Date.now()});}
  const authenticate=req=>{const p=clients.get(String(req.headers.authorization||'').replace(/^Bearer /,''));return p&&online(p)?p:null;};
  function endRoom(r,message){for(const p of r.people.values()){clients.delete(p.token);send(p.ws,{type:'ended',message});if(p.ws){p.ws.person=null;p.ws.close(1000,'Ended');}}if(r.source?.type==='file')dropFile(r.source.id);attachments.clearRoom(r.code);rooms.delete(r.code);persist();}
  const owner=createOwnerControl({rooms,online,originOK,rate,send,state,remove,endRoom});
@@ -75,6 +77,7 @@ export function createXparty(options={}) {
   const json=(status,body)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
   if(req.method==='OPTIONS'){res.writeHead(originOK(req)?204:403);return res.end();}
   if(await owner.handle(req,res,url,json,ip(req)))return;
+  if(await handleCompanionDownload(req,res,url))return;
   if(url.pathname==='/health')return json(200,{ok:true,service:'Xparty',version:'0.10.0'});
   if(url.pathname==='/api/rooms/public'){if(req.method!=='GET')return json(405,{error:'Method not allowed'});if(!rate('directory:'+ip(req),60,60000))return json(429,{error:'Please wait before refreshing.'});return json(200,{rooms:publicRooms(rooms,{online,occupied,query:url.searchParams.get('q')||''})});}
   if(url.pathname==='/api/accounts/config')return json(200,{enabled:accountAuth.enabled,url:publicAuthKey?process.env.SUPABASE_URL||null:null,publicKey:publicAuthKey,phoneEnabled:process.env.SUPABASE_PHONE_ENABLED==='true'});
@@ -121,7 +124,7 @@ export function createXparty(options={}) {
   if(req.method!=='GET')return json(405,{error:'Method not allowed'});
   let pathname;try{pathname=decodeURIComponent(url.pathname);}catch{return json(400,{error:'Invalid URL'});}
   // Serve the application at the short root URL, retaining old /xparty/ links.
-  if(pathname==='/owner'||pathname==='/owner/')pathname='/xparty/owner.html';else if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|queue-policy.js|discovery.js|discovery.css|ambient.js|ambient.css|immersive.js|providers.js|profile-data.js|member-profiles.js|account-gate.js|redesign.css|skip-voting.js|skip-voting.css|subtitles.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
+  if(pathname==='/owner'||pathname==='/owner/')pathname='/xparty/owner.html';else if(pathname==='/')pathname='/xparty/index.html';else if(!pathname.startsWith('/xparty/')&&/^\/(?:app.js|config.js|style.css|compact.css|sync.js|settings.js|icons.js|accounts.js|ui-support.js|queue-policy.js|discovery.js|discovery.css|ambient.js|ambient.css|room-design.js|room-design.css|provider-ui.js|companion-client.js|companion-providers.js|immersive.js|providers.js|profile-data.js|member-profiles.js|account-gate.js|redesign.css|skip-voting.js|skip-voting.css|subtitles.js|logo.svg|guidelines.html)$/.test(pathname))pathname='/xparty'+pathname;
   if(pathname.endsWith('/'))pathname+='index.html';const path=resolve(ROOT,'.'+pathname);const within=relative(ROOT,path);if(within==='..'||within.startsWith('..'+sep)||isAbsolute(within))return json(403,{error:'Forbidden'});
   try{const data=await readFile(path);res.writeHead(200,{'Content-Type':({'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml','.json':'application/json'})[extname(path)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data);}catch{return json(404,{error:'Not found'});}
  });
@@ -159,12 +162,12 @@ export function createXparty(options={}) {
    if(m.type==='capacity'&&host){const capacity=Number(m.capacity);if(Number.isInteger(capacity)&&capacity>=2&&capacity<=10&&capacity>=occupied(r)){if(capacity>r.capacity)r.locked=false;r.capacity=capacity;state(r);}else send(ws,{type:'error',message:'Room size must fit current members, with a maximum of 10.'});return;}
    if(m.type==='lock'&&host){r.locked=m.locked===true;state(r);return;}
    if(m.type==='source'&&host){control.cancel(r,'Video changed.');return choose(r,p,m.source);}
-   if(m.type==='queue-add'&&host){const provider=m.provider||'youtube';if((!validProviderId(provider,m.videoId)&&!(provider==='direct'&&publicVideoURL(m.url)))||r.queue.length>=50)return false;if(!r.queue.some(q=>(q.provider||'youtube')===provider&&(provider==='direct'?q.url===publicVideoURL(m.url):q.videoId===m.videoId)))r.queue.push({id:randomUUID(),...(provider==='youtube'?{}:{provider}),...(provider==='direct'?{url:publicVideoURL(m.url)}:{videoId:m.videoId}),title:clean(m.title,150)||'Video',addedBy:p.name,createdAt:Date.now()});state(r);return true;}
+   if(m.type==='queue-add'&&host){const provider=m.provider||'youtube',companion=normalizeCompanionSource({type:provider,url:m.url,videoId:m.videoId});if((!validProviderId(provider,m.videoId)&&!(provider==='direct'&&publicVideoURL(m.url))&&!companion)||r.queue.length>=50)return false;const item={...(provider==='youtube'?{}:{provider}),...(companion?{url:companion.url,videoId:companion.videoId}:provider==='direct'?{url:publicVideoURL(m.url)}:{videoId:m.videoId})};if(!r.queue.some(q=>(q.provider||'youtube')===provider&&(item.url?q.url===item.url:q.videoId===item.videoId)))r.queue.push({id:randomUUID(),...item,title:clean(m.title,150)||'Video',addedBy:p.name,createdAt:Date.now()});state(r);return true;}
    if(m.type==='vote')return;
    if(m.type==='queue-remove'&&host){r.queue=r.queue.filter(q=>q.id!==m.id);state(r);return true;}
    if(['queue-play','next','previous'].includes(m.type)&&host){const item=m.type==='previous'?r.previousSource:m.type==='next'?nextQueued(r,{automatic:m.automatic===true,sourceId:m.sourceId}):r.queue.find(q=>q.id===m.id);if(item){const previous=r.source&&r.source.type!=='file'?{provider:r.source.type,videoId:r.source.videoId,url:r.source.url,title:r.source.title}:null;r.queue=r.queue.filter(q=>q.id!==item.id);control.cancel(r,'Video changed.');const result=choose(r,p,{type:item.provider||'youtube',videoId:item.videoId,url:item.url,title:item.title});r.previousSource=previous;return result;}return false;}
    if(m.type==='ready'&&m.sourceId===r.source?.id){p.ready=m.ready===true;p.loadStatus=clean(m.status,100)||(p.ready?'Ready':'Loading');state(r);return;}
-   if(m.type==='buffering'&&['youtube','vimeo','direct'].includes(r.source?.type)&&m.sourceId===r.source.id){p.buffering=m.buffering===true&&r.playback.playing;p.bufferingAt=Date.now();syncBuffering(r);return;}
+   if(m.type==='buffering'&&(isEmbedded(r.source)||r.source?.type==='direct')&&!isLiveSource(r.source)&&m.sourceId===r.source.id){p.buffering=m.buffering===true&&r.playback.playing;p.bufferingAt=Date.now();syncBuffering(r);return;}
    if(m.type==='watch-heartbeat'){p.watchSource=m.sourceId===r.source?.id&&m.active===true?m.sourceId:null;p.watchingAt=p.watchSource?Date.now():0;return;}
     if(m.type==='profile-details'){if(r.people.has(m.target)&&rate('profile-view:'+p.id,30,60000))send(ws,{type:'profile-details',target:m.target,together:togetherView(r,p.id,m.target)});return;}
     if(m.type==='profile-update'){if(rate('profile:'+p.id,6,60000)){p.profile=profileData(m.profile);state(r);}return;}

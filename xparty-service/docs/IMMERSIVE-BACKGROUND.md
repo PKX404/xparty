@@ -1,4 +1,6 @@
-# Immersive background
+# Immersive background — historical first implementation
+
+Superseded by [ROOM-REDESIGN-REVIEW-20261022.md](ROOM-REDESIGN-REVIEW-20261022.md). The notes below describe the earlier chat-only implementation; the current renderer covers the whole viewport and follows decoded video frames.
 
 Local implementation, 2026-10-22. The chat panel's Immersive button replaces the old Ambient label and retains the per-device on/off preference. The background now preserves the complete video frame behind the conversation instead of reducing it to three colors.
 

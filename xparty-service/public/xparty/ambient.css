@@ -1,21 +1,21 @@
-﻿/* Restrained color sits behind opaque chat text and controls. */
-.chat-panel{isolation:isolate;position:relative}
-.ambient-chat-layer{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;overflow:hidden;opacity:0;background:radial-gradient(ellipse at 10% 20%,var(--ambient-0,#2f4257),transparent 65%),radial-gradient(ellipse at 90% 70%,var(--ambient-2,#433851),transparent 65%),var(--ambient-1,#23383d);transition:background 1s,opacity .6s}
-.ambient-chat-on .ambient-chat-layer{opacity:.28}
-.ambient-chat-layer:after{content:'';position:absolute;inset:-25%;background:radial-gradient(ellipse at 30% 30%,var(--ambient-2,#433851),transparent 60%);opacity:.5}
-.ambient-chat-moving .ambient-chat-layer:after{animation:ambient-chat-drift 14s ease-in-out infinite alternate}
-.ambient-chat-on .message{background-color:color-mix(in srgb,var(--panel,#10191f) 92%,transparent)}
-.ambient-chat-on #chat-form,.ambient-chat-on .panel-title{background-color:color-mix(in srgb,var(--panel,#10191f) 94%,transparent)}
-.ambient-chat-toggle{font-size:10px!important;min-height:24px!important;padding:3px 7px!important;margin-left:8px}
-.ambient-chat-toggle[aria-pressed=true]{border-color:var(--lime,#cfed94)}
-.chat-panel .panel-title{flex-wrap:wrap;row-gap:4px}
-@keyframes ambient-chat-drift{from{transform:translate(-8%,-5%) rotate(-8deg)}to{transform:translate(8%,7%) rotate(8deg)}}
-@media(prefers-reduced-motion:reduce){.ambient-chat-layer{transition:none}.ambient-chat-layer:after{animation:none!important}}
-
-.ambient-chat-note{position:relative;margin:0;padding:4px 10px;font-size:10px;line-height:1.4;background:#10191ff2;color:var(--muted,#c1c7cb)}
-
-/* Spatial blur preserves video composition behind the conversation. */
-.immersive-frame{position:absolute;inset:-8%;width:116%;height:116%;object-fit:cover;pointer-events:none}
+/* One frame layer covers the complete viewport, including room margins. */
+.room-ambient-layer{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;opacity:0;contain:strict;background:radial-gradient(ellipse at 15% 15%,var(--ambient-0,#2b3457),transparent 65%),radial-gradient(ellipse at 85% 75%,var(--ambient-2,#48365e),transparent 65%),var(--ambient-1,#17212c)}
+body.in-room{isolation:isolate}
+.room-immersive-on>.room-ambient-layer{opacity:1}
+.room-ambient-layer:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,#05081275,#06091238 35%,#070a128f);pointer-events:none}
+.immersive-frame{position:absolute;inset:-6%;width:112%;height:112%;pointer-events:none;object-fit:cover;opacity:.9}
 .immersive-frame[hidden]{display:none}
-.ambient-chat-on .ambient-chat-layer{opacity:.65}
-.ambient-chat-layer:has(.immersive-frame:not([hidden])):after{display:none}
+/* No CSS color interpolation: each decoded frame is shown immediately. */
+.room-immersive-on .chat-panel,.room-immersive-on .call-panel{background:#0b1026a6!important}
+.room-immersive-on .source-panel{background:#0b1026dd!important}
+.ambient-chat-toggle{font:inherit;font-size:12px!important;min-height:34px!important;padding:7px 12px!important;white-space:nowrap}
+.ambient-chat-toggle[aria-pressed=true]{color:#f5efff!important;border-color:#c3afff!important;background:#9a7cea26!important}
+.ambient-chat-note{margin:0;padding:3px 0;color:#d5d9e8;font-size:11px;line-height:1.5;flex-basis:100%}
+.theatre-toolbar{flex-wrap:wrap}
+.message,.message.mine,.message.private{color:#f8f9ff!important;background:#11192cdd!important;border:1px solid #ffffff14}
+.message.mine{background:#514272e8!important;border-color:#c8b5ff33}
+.message p,.message.mine p,.message.private p{color:#f8f9ff!important}
+.message small,.message.mine small{color:#d5cce9!important}
+.message .read-receipt{color:#e1d3ff!important}
+.chat-panel input,.chat-panel textarea{color:#f8f9ff!important;caret-color:#e1d3ff}
+@media(prefers-reduced-motion:reduce){.room-ambient-layer,.immersive-frame{animation:none!important;transition:none!important}}
