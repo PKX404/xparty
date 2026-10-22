@@ -1,3 +1,4 @@
+import {createImmersiveRenderer} from './immersive.js';
 ﻿export function colorsFromPixels(data,width,height){
  const sums=Array.from({length:3},()=>[0,0,0,0]);
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const i=(y*width+x)*4;if(data[i+3]<128)continue;const s=sums[Math.min(2,Math.floor(x*3/width))];for(let c=0;c<3;c++)s[c]+=data[i+c];s[3]++;}
@@ -17,7 +18,8 @@ export function initAmbient({getContext,panel=document.querySelector('.chat-pane
  const preference='xparty.ambient-chat';let enabled=true;try{enabled=localStorage.getItem(preference)!=='off';}catch{}
  const motion=matchMedia('(prefers-reduced-motion: reduce)'),canvas=document.createElement('canvas');canvas.width=12;canvas.height=8;const ctx=canvas.getContext('2d',{willReadFrequently:true});
  const layer=document.createElement('div');layer.className='ambient-chat-layer';layer.setAttribute('aria-hidden','true');panel.prepend(layer);
- const button=document.createElement('button');button.type='button';button.className='ambient-chat-toggle secondary';button.textContent='Ambient';button.title='Ambient chat background';(panel.querySelector('.panel-title')||panel).append(button);
+ const immersive=createImmersiveRenderer(layer);
+ const button=document.createElement('button');button.type='button';button.className='ambient-chat-toggle secondary';button.textContent='Immersive';button.title='Immersive video background';(panel.querySelector('.panel-title')||panel).append(button);
  let timer=null,key=null,image=null,failed=false,destroyed=false,lastPalette=null,thumbnailReady=false,lastSampleAt=-Infinity;
  const media=navigator.mediaDevices,origin=location.origin;let handle=null,capture=null,captureVideo=null,captureTrack=null,captureGeneration=0,capturePending=false;
  const live=document.createElement('button');live.type='button';live.className='ambient-chat-toggle secondary';live.textContent='Live colors';live.title='Use colors from this Xparty tab';
@@ -42,8 +44,8 @@ export function initAmbient({getContext,panel=document.querySelector('.chat-pane
  }
  live.addEventListener('click',startCapture);
  function paint(palette){lastPalette=palette;palette.forEach((rgb,i)=>panel.style.setProperty('--ambient-'+i,`rgb(${rgb.join(' ')})`));}
- function sample(media,crop=null){if(!ctx||Date.now()-lastSampleAt<250)return;lastSampleAt=Date.now();try{if(crop)ctx.drawImage(media,crop.x,crop.y,crop.width,crop.height,0,0,12,8);else ctx.drawImage(media,0,0,12,8);paint(colorsFromPixels(ctx.getImageData(0,0,12,8).data,12,8));}catch{failed=true;}}
- function clear(){key=null;image=null;failed=false;thumbnailReady=false;lastPalette=null;panel.classList.remove('ambient-chat-on','ambient-chat-moving');for(let i=0;i<3;i++)panel.style.removeProperty('--ambient-'+i);}
+ function sample(media,crop=null){if(!ctx||Date.now()-lastSampleAt<250)return;lastSampleAt=Date.now();try{immersive.render(media,crop);if(crop)ctx.drawImage(media,crop.x,crop.y,crop.width,crop.height,0,0,12,8);else ctx.drawImage(media,0,0,12,8);paint(colorsFromPixels(ctx.getImageData(0,0,12,8).data,12,8));}catch{failed=true;}}
+ function clear(){immersive.clear();key=null;image=null;failed=false;thumbnailReady=false;lastPalette=null;panel.classList.remove('ambient-chat-on','ambient-chat-moving');for(let i=0;i<3;i++)panel.style.removeProperty('--ambient-'+i);}
  function update(){
   clearTimeout(timer);timer=null;if(destroyed)return;const c=getContext()||{},r=c.room,source=r?.source;
   button.setAttribute('aria-pressed',String(enabled));
@@ -61,5 +63,5 @@ export function initAmbient({getContext,panel=document.querySelector('.chat-pane
  }
  function toggle(){enabled=!enabled;try{localStorage.setItem(preference,enabled?'on':'off');}catch{}update();}
  const onPageHide=()=>{stopCapture();clearTimeout(timer);timer=null;};window.addEventListener('pagehide',onPageHide);const visibility=()=>update();button.addEventListener('click',toggle);document.addEventListener('visibilitychange',visibility);motion.addEventListener('change',visibility);update();
- return {update,destroy(){if(destroyed)return;destroyed=true;stopCapture();clearTimeout(timer);image=null;window.removeEventListener('pagehide',onPageHide);live.removeEventListener('click',startCapture);live.remove();note.remove();button.removeEventListener('click',toggle);document.removeEventListener('visibilitychange',visibility);motion.removeEventListener('change',visibility);button.remove();layer.remove();clear();}};
+ return {update,destroy(){if(destroyed)return;destroyed=true;stopCapture();clearTimeout(timer);image=null;window.removeEventListener('pagehide',onPageHide);live.removeEventListener('click',startCapture);live.remove();note.remove();button.removeEventListener('click',toggle);document.removeEventListener('visibilitychange',visibility);motion.removeEventListener('change',visibility);button.remove();clear();immersive.destroy();layer.remove();}};
 }

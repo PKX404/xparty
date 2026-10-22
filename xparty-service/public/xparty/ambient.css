@@ -13,3 +13,9 @@
 @media(prefers-reduced-motion:reduce){.ambient-chat-layer{transition:none}.ambient-chat-layer:after{animation:none!important}}
 
 .ambient-chat-note{position:relative;margin:0;padding:4px 10px;font-size:10px;line-height:1.4;background:#10191ff2;color:var(--muted,#c1c7cb)}
+
+/* Spatial blur preserves video composition behind the conversation. */
+.immersive-frame{position:absolute;inset:-8%;width:116%;height:116%;object-fit:cover;pointer-events:none}
+.immersive-frame[hidden]{display:none}
+.ambient-chat-on .ambient-chat-layer{opacity:.65}
+.ambient-chat-layer:has(.immersive-frame:not([hidden])):after{display:none}
