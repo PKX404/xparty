@@ -221,7 +221,7 @@ public final class MainActivity extends Activity implements RoomConnection.Liste
       public void onProgressChanged(SeekBar b,int n,boolean fromUser){}
       public void onStartTrackingTouch(SeekBar b){draggingSeek=true;}
       public void onStopTrackingTouch(SeekBar b){draggingSeek=false;long len=exo==null?0:exo.getDuration();
-        if(len>0&&len!=Player.TIME_UNSET)seekTo((long)len*b.getProgress()/1000);}
+        if(len>0&&len!=androidx.media3.common.C.TIME_UNSET)seekTo((long)len*b.getProgress()/1000);}
     });
     playerControls.addView(seek,weight(1,dp(42)));
     playerControls.addView(btn("+10",v->jump(10000)),new LinearLayout.LayoutParams(dp(39),dp(40)));
@@ -479,7 +479,7 @@ public final class MainActivity extends Activity implements RoomConnection.Liste
   }
   private void updatePlaybackControls(){
     if(exo!=null&&seek!=null&&!draggingSeek){
-      long len=exo.getDuration();if(len>0&&len!=Player.TIME_UNSET)seek.setProgress((int)Math.min(1000,(exo.getCurrentPosition()*1000)/len));
+      long len=exo.getDuration();if(len>0&&len!=androidx.media3.common.C.TIME_UNSET)seek.setProgress((int)Math.min(1000,(exo.getCurrentPosition()*1000)/len));
     }
     if(syncBadge!=null&&selectedSource!=null)syncBadge.setText((exo!=null&&!exo.isPlaying()?"Paused":"Playing")+" together"+(pingMs>=0?" · "+pingMs+" ms":""));
   }
